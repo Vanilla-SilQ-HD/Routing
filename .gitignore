@@ -3,6 +3,8 @@
 cache/
 dist/
 previous/
+incoming/
+release/
 __pycache__/
 *.pyc
 *.zip
