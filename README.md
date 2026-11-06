@@ -2,19 +2,13 @@
 
 [![Сборка и публикация](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg)](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml)
 
-Автообновляемый список доменов для выборочной маршрутизации в **sing-box**. Помогает направлять заблокированные и недоступные из России ресурсы через VPN, оставляя остальной трафик напрямую.
+Автообновляемые наборы правил для выборочной маршрутизации в **sing-box**. Помогают направлять заблокированные и недоступные из России ресурсы через VPN, оставляя остальной трафик напрямую.
 
-**[Скачать .srs](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs)** · [Релизы и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [SHA-256](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs.sha256)
+**[Домены .srs](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs)** · **[Сети приложений .srs](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs)** · [Релизы, отчёты и SHA-256](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
 
 ## Подключение
 
-Постоянный URL для удалённого набора правил:
-
-```text
-https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs
-```
-
-Пример для **sing-box 1.14+**. Это фрагмент для существующего конфига: `vpn` и `direct` должны совпадать с тегами ваших подключений.
+Пример подключения обоих наборов для **sing-box 1.14+**. Это фрагмент для существующего конфига: `vpn` и `direct` должны совпадать с тегами ваших подключений. URL постоянные и всегда указывают на последний опубликованный релиз.
 
 ```json
 {
@@ -30,26 +24,34 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-doma
         "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs",
         "http_client": { "detour": "vpn" },
         "update_interval": "6h"
+      },
+      {
+        "type": "remote",
+        "tag": "routing-services",
+        "format": "binary",
+        "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs",
+        "http_client": { "detour": "vpn" },
+        "update_interval": "6h"
       }
     ],
     "rules": [
       { "action": "sniff" },
-      { "rule_set": ["routing"], "action": "route", "outbound": "vpn" }
+      { "rule_set": ["routing", "routing-services"], "action": "route", "outbound": "vpn" }
     ],
     "final": "direct"
   }
 }
 ```
 
-Совпадения с набором идут через `vpn`, остальные соединения — через `direct`. Добавьте фрагмент к существующим настройкам; свои приоритетные исключения разместите перед правилом `routing`. Другие правила VPN в конфиге могут изменить эту схему.
+Совпадения с любым из наборов идут через `vpn`, остальные соединения — через `direct`. Добавьте фрагмент к существующим настройкам; свои приоритетные исключения разместите перед этим VPN-правилом. Другие правила VPN в конфиге могут изменить эту схему.
 
-Сам файл в примере скачивается через VPN и сохраняется в кеш. Для прямой загрузки укажите `"detour": "direct"`. В панели управления, например AWG Manager, используются те же параметры: удалённый набор, формат `binary`, URL выше и нужное VPN-подключение.
+Файлы в примере скачиваются через VPN и сохраняются в кеш. В панели управления, например AWG Manager, используются те же параметры: два удалённых набора, формат `binary`, URL из примера и нужное VPN-подключение.
 
-Подробнее: [удалённые наборы sing-box](https://sing-box.sagernet.org/configuration/rule-set/). DNS и получение имени назначения должны быть настроены в вашем клиенте; один список доменов этого не заменяет.
+**DNS настраивается отдельно.** Для выбора DNS-сервера по домену используйте только `routing` (`blocked-domains.srs`). Набор `routing-services` с IP-сетями предназначен только для маршрутизации соединений. Подробнее: [удалённые наборы sing-box](https://sing-box.sagernet.org/configuration/rule-set/).
 
-## Что входит в список
+## Что входит в наборы
 
-База объединяет доменные записи из пяти источников:
+`blocked-domains.srs` объединяет доменные записи из пяти источников:
 
 - [Antifilter](https://antifilter.download/list/domains.lst).
 - [Antifilter community](https://community.antifilter.download/list/domains.lst).
@@ -59,7 +61,9 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-doma
 
 Дубли и избыточные условия удаляются. Правила для целых доменных зон и выбранных общих платформ фильтруются, а отдельно перечисленные поддомены сохраняются. Основа фильтрации — [Public Suffix List](https://publicsuffix.org/) и [политика проекта](config/policy.json).
 
-В набор не добавляются IP-подсети и общие категории вроде «все ИИ» или «все зарубежные сайты». Наличие конкретного сервиса определяется исходными списками.
+`blocked-services-ip.srs` дополняет его сетями приложений, которые подключаются прямо к IP. Сейчас это [официальный список Telegram](https://core.telegram.org/resources/cidr.txt) и IPv4/IPv6-маршруты пяти выделенных AS Telegram из RIPE RIS. Домены Telegram уже есть в доменной базе, но соединение без имени назначения требует IP-правила.
+
+Сервисные сети обновляются из отдельно проверенных источников. Общие категории «все ИИ», полные сети облачных провайдеров и широкие списки заблокированных IP автоматически не добавляются: общие адреса могут обслуживать посторонние ресурсы. Преобразование всех заблокированных доменов в IP не сохраняет точность доменных правил. [Разбор IP-источников и охвата →](docs/IP-COVERAGE.md)
 
 ## Обновления
 
@@ -70,9 +74,9 @@ GitHub Actions проверяет источники четыре раза в с
 ## Ограничения
 
 - Источники могут содержать устаревшие или ошибочные записи. База не проверяет доступность каждого сайта у вашего провайдера и не гарантирует охват всех блокировок.
-- Набор работает по доменам. Соединения по IP и приложения, скрывающие имя назначения, могут не совпасть с правилами. Настройка DNS выполняется отдельно.
+- IP-набор охватывает только перечисленные сервисные сети. Он не распознаёт любое приложение и не охватывает произвольные адреса собеседников в P2P-звонках. Доменные правила требуют получения имени назначения; настройка DNS выполняется отдельно.
 - На устройствах с небольшим объёмом RAM проверьте расход памяти: размер файла `.srs` не равен размеру набора в памяти.
 
-Нашли ошибку — [откройте issue](https://github.com/Vanilla-SilQ-HD/Routing/issues), указав домен, ожидаемый маршрут и версию набора.
+Нашли ошибку — [откройте issue](https://github.com/Vanilla-SilQ-HD/Routing/issues), указав домен или приложение, ожидаемый маршрут и версию набора.
 
 [Сборка, проверка файлов и сопровождение проекта →](docs/BUILD.md)

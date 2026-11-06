@@ -1,4 +1,4 @@
-"""Build a domain-only VPN selector dataset. No router/API access is implemented."""
+"""Build domain and reviewed service-network VPN rule sets. No router access."""
 from __future__ import annotations
 
 import argparse
@@ -22,9 +22,10 @@ import urllib.parse
 import urllib.request
 
 import idna
+from service_networks import normalize_networks, prepare_services
 
 ROOT = Path(__file__).resolve().parents[1]
-USER_AGENT = "selective-vpn-rules/1 (public domain lists only)"
+USER_AGENT = "Routing/2 (public routing data only)"
 ASCII_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 
 
@@ -296,13 +297,20 @@ def validate_previous(previous, stats, count, policy, now=None):
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
-def compile_and_verify(directory, executable, source_format_version):
+def compile_and_verify(directory, executable, source_format_version, basename="blocked-domains", networks_only=False):
     version = subprocess.run([str(executable), "version"], capture_output=True, text=True, check=True, timeout=15).stdout.splitlines()[0]
-    source, binary, decoded = (directory / name for name in ("blocked-domains.json", "blocked-domains.srs", "roundtrip.json"))
+    source, binary, decoded = (directory / name for name in (basename + ".json", basename + ".srs", "roundtrip.json"))
     subprocess.run([str(executable), "rule-set", "compile", "--output", str(binary), str(source)], check=True, capture_output=True, text=True, timeout=180)
     subprocess.run([str(executable), "rule-set", "decompile", "--output", str(decoded), str(binary)], check=True, capture_output=True, text=True, timeout=180)
     original, result = read_json(source), read_json(decoded)
     def conditions(data):
+        if networks_only:
+            networks = []
+            for rule in data["rules"]:
+                if set(rule) != {"ip_cidr"} or not isinstance(rule["ip_cidr"], list) or not rule["ip_cidr"]:
+                    raise BuildError("Compiler roundtrip introduced a non-CIDR or empty condition")
+                networks.extend(ipaddress.ip_network(n, strict=True) for n in rule["ip_cidr"])
+            return normalize_networks(networks)
         groups = {"domain": set(), "domain_suffix": set()}
         for rule in data["rules"]:
             if set(rule) - groups.keys():
@@ -311,7 +319,7 @@ def compile_and_verify(directory, executable, source_format_version):
                 groups[kind].update(values)
         return groups
     if conditions(original) != conditions(result):
-        raise BuildError("SRS compile/decompile changed the domain conditions")
+        raise BuildError("SRS compile/decompile changed the routing conditions")
     decoded.unlink()
     config = directory / "validation-config.json"
     write_json(config, {
@@ -336,16 +344,22 @@ def make_report(manifest, exclusions, probes):
     excluded_table = table(["Условие", "Причина", "Источники"],
                            [[x["domain"], x["reason"], ", ".join(x["sources"])] for x in exclusions])
     out = manifest["output"]
+    services = manifest["service_networks"]
+    service_table = table(["Сервис", "Источник", "IPv4-сетей", "IPv6-сетей", "SHA-256"],
+                          [[s["service"], s["url"], s["ipv4_prefixes"], s["ipv6_prefixes"], s["sha256"]]
+                           for s in services["sources"]])
     return f'''<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Проверка автоматической VPN-базы</title><style>body{{font:16px/1.55 system-ui,sans-serif;background:#f6f8fb;color:#152137;max-width:1200px;margin:32px auto;padding:0 24px}}h1,h2{{line-height:1.2}}table{{border-collapse:collapse;width:100%;background:white;margin:20px 0}}td,th{{padding:10px 12px;border:1px solid #dce3ed;text-align:left;overflow-wrap:anywhere}}th{{background:#e9eff8}}.box{{background:#e6f1ff;border-left:4px solid #3971ce;padding:16px}}code{{background:#e9eff8;padding:2px 4px}}small{{color:#506078}}</style>
 <h1>Автоматическая база для выборочного VPN</h1><p>Сборка: {e(manifest['built_at'])}. Все времена UTC.</p>
-<p class="box"><b>Доменный набор для sing-box.</b> VPN ниже означает совпадение домена с базой, Direct — отсутствие совпадения. Итоговый маршрут зависит от порядка правил в вашей конфигурации. Набор не содержит IP-правил и не настраивает VPN или DNS.</p>
+<p class="box"><b>Два набора для sing-box.</b> blocked-domains.srs содержит домены и подходит для маршрутизации и DNS. blocked-services-ip.srs содержит проверенные сети приложений и используется только в маршрутизации. Итоговый маршрут зависит от порядка ваших правил. Сборка не настраивает VPN или DNS.</p>
 <h2>Результат</h2><p>{out['total_conditions']:,} доменных условий: {out['suffix']:,} суффиксов и {out['exact']:,} точных имён. SRS: {out['srs_bytes']:,} байт. Удалено широких условий: {len(exclusions)}. Избыточных условий после объединения: {manifest['counts']['redundant_conditions_removed']:,}.</p>
-<p>Сборка из исходников до минимизации. Широкие записи удаляются отдельно; явно перечисленные поддомены сохраняются. Категорий «Россия» и «все ИИ», IP-подсетей, ASN и персональных исключений в базе нет.</p>
+<p>Домены собираются из исходников до минимизации. Широкие записи удаляются отдельно; явно перечисленные поддомены сохраняются. Общих категорий «Россия» и «все ИИ», облачных ASN и персональных исключений в базе нет.</p>
 <h2>Источники</h2>{source_table}<p>Дата получения не доказывает актуальность каждой блокировки. В частности, unavailable-in-russia использует накопительное добавление. Полные URL, времена и хеши записаны в manifest.json.</p>
+<h2>Сети приложений</h2><p>{services['output']['total_prefixes']} сетей после точного объединения соседних диапазонов; SRS: {services['output']['srs_bytes']} байт. Официальный список Telegram дополняется текущими анонсами его выделенных сетей по RIPE RIS с проверкой владельца ASN. Включены IPv4 и IPv6. Общие сети облачных провайдеров и адреса из DNS-ответов не добавляются.</p>{service_table}
+<p>Сервисный набор дополняет доменные условия для соединений без имени назначения. Он не охватывает произвольные IP собеседников в P2P-звонках и не гарантирует покрытие всех приложений. Изменения покрытия проверяются отдельно от доменной базы.</p>
 <h2>Проверка доменов</h2><p>VPN — есть совпадение с базой; Direct — совпадения нет. Это не сетевой тест доступности и не чтение действующих правил роутера. Имена из этого раздела не используются как принудительные исключения.</p>{probe_table}
 <h2>Удалённые широкие условия</h2><p>Удаление родительского условия не удаляет его отдельно перечисленные поддомены. PSL включает ICANN и PRIVATE. Зависимости отдельных ограниченных сервисов (например, claudeusercontent.com) сохраняются при наличии в источниках; политика не добавляет их самостоятельно. PRIVATE wildcard не используется для удаления отдельных доменов арендаторов.</p>{excluded_table}
-<h2>Валидация</h2><p>Компиляция SRS, обратное декодирование с сравнением условий и sing-box check: выполнены. Программа sing-box запускалась только как компилятор и валидатор, без сетевого сервиса.</p>
+<h2>Валидация</h2><p>Компиляция обоих SRS, обратное декодирование со сравнением доменов и IP-покрытия, sing-box check: выполнены. Программа sing-box запускалась только как компилятор и валидатор, без сетевого сервиса.</p>
 <p>Резкое изменение размера относительно предыдущей успешной или принятой версии останавливает сборку. Ошибка обязательного источника не заменяется неполным или пустым набором. Текущий тип сравнения: {e(manifest['validation']['baseline'])}. GitHub Actions публикует проверенный результат в Releases отдельным этапом. Статус публикации указан в соответствующем запуске Actions.</p>
 <h2>Границы результата</h2><p>Источники могут содержать ошибочные и устаревшие записи. Фильтрация общей платформы может оставить непокрытыми блокировки, для которых источник не перечисляет конкретные поддомены. Доменные правила не гарантируют охват соединений по IP или со скрытым именем сайта. Потребление памяти, DNS, IPv6 и реальные маршруты необходимо проверять на своём устройстве.</p>
 </html>'''
@@ -355,10 +369,14 @@ def build(args):
     started = time.monotonic()
     root = Path(args.root).resolve()
     sources_config = read_json(root / "config/sources.json")
+    service_config = read_json(root / "config/service-networks.json")
     policy = read_json(root / "config/policy.json")
     sources = sources_config["sources"]
     psl_source = sources_config["public_suffix_list"]
-    all_sources = sources + [psl_source]
+    all_sources = sources + [psl_source] + service_config["sources"]
+    all_sources += [s["identity_source"] for s in service_config["sources"] if "identity_source" in s]
+    if len({s["id"] for s in all_sources}) != len(all_sources):
+        raise BuildError("Duplicate input source ID")
     cache = root / "cache/sources"
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         futures = {s["id"]: pool.submit(fetch_source, s, cache, args.offline) for s in all_sources}
@@ -366,6 +384,8 @@ def build(args):
     if args.fetch_only:
         print("All required public inputs cached and hashed. No compilation performed.")
         return
+    previous = read_json(args.previous) if args.previous else None
+    service_networks, service_manifest = prepare_services(fetched, service_config, previous)
     psl = PublicSuffixes(fetched[psl_source["id"]][0].read_text(encoding="utf-8-sig"))
     if psl.count < psl_source["min_entries"]:
         raise BuildError("Public Suffix List is unexpectedly small")
@@ -408,7 +428,6 @@ def build(args):
     for names in (original_exact, original_suffix):
         if any(not match_rule(name, exact, suffix) for name in names):
             raise BuildError("Minimization lost an input condition")
-    previous = read_json(args.previous) if args.previous else None
     validation = validate_previous(previous, stats, count, policy)
     probes = []
     for domain in read_json(root / "config/probes.json")["domains"]:
@@ -444,6 +463,14 @@ def build(args):
         compilation = compile_and_verify(stage, compiler, lock["source_format_version"])
         if compilation["version"] != "sing-box version " + lock["sing_box_version"]:
             raise BuildError("Unexpected compiler version; update the tool lock explicitly")
+        write_json(stage / "blocked-services-ip.json", {"version": lock["source_format_version"],
+                                                       "rules": [{"ip_cidr": [str(n) for n in service_networks]}]})
+        (stage / "blocked-services-ip.txt").write_text("".join(str(n) + "\n" for n in service_networks), encoding="utf-8")
+        service_manifest["compiler"] = compile_and_verify(stage, compiler, lock["source_format_version"],
+                                                          "blocked-services-ip", networks_only=True)
+        if service_manifest["compiler"]["version"] != compilation["version"]:
+            raise BuildError("Service compiler version mismatch")
+        service_manifest["output"]["srs_bytes"] = (stage / "blocked-services-ip.srs").stat().st_size
         excluded = [exclusions[key] for key in sorted(exclusions)]
         write_json(stage / "excluded.json", excluded)
         write_json(stage / "probes.json", probes)
@@ -457,6 +484,7 @@ def build(args):
         manifest = {
             "schema_version": 1, "built_at": utc_now(), "offline_replay": args.offline,
             "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
+            "service_networks": service_manifest,
             "configuration_sha256": config_hashes, "compiler": compilation,
             "environment": {"python": sys.version.split()[0], "idna": idna.__version__, "github_commit": os.environ.get("GITHUB_SHA")},
             "counts": {"source_unique_conditions_sum": total_conditions, "filtered_source_conditions_sum": skipped,
@@ -466,11 +494,11 @@ def build(args):
             "exact_intersections_before_minimization": intersections,
             "output": {"total_conditions": count, "exact": len(exact), "suffix": len(suffix),
                        "srs_bytes": (stage / "blocked-domains.srs").stat().st_size,
-                       "files": {name: file_sha256(stage / name) for name in ("blocked-domains.json", "blocked-domains.srs", "blocked-domains.txt", "excluded.json", "probes.json")}},
+                       "files": {name: file_sha256(stage / name) for name in ("blocked-domains.json", "blocked-domains.srs", "blocked-domains.txt", "blocked-services-ip.json", "blocked-services-ip.srs", "blocked-services-ip.txt", "excluded.json", "probes.json")}},
             "validation": validation, "elapsed_seconds": round(time.monotonic() - started, 2),
-            "scope": {"domains_only": True, "personal_rules_included": False, "router_access": False,
+            "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": False, "dns_configuration_included": False},
+                      "ip_rules_included": True, "dns_configuration_included": False},
         }
         write_json(stage / "manifest.json", manifest)
         (stage / "report.html").write_text(make_report(manifest, excluded, probes), encoding="utf-8")
@@ -478,7 +506,7 @@ def build(args):
         if target.exists():
             target.rmdir()  # Only the empty directory checked above, never a recursive removal.
         stage.rename(target)
-    print(json.dumps({"output": str(target), "domains": count, "srs_bytes": manifest["output"]["srs_bytes"],
+    print(json.dumps({"output": str(target), "domains": count, "service_networks": service_manifest["output"], "srs_bytes": manifest["output"]["srs_bytes"],
                       "excluded_broad_conditions": len(excluded), "validation": compilation}, ensure_ascii=False), flush=True)
 
 

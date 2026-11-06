@@ -30,6 +30,8 @@ class FakeGitHub:
     def create_draft(self, tag, commit, title, body):
         self.events.append("draft")
         self.tag = tag
+        self.body = body
+        self.uploaded = []
         return {"id": 10, "draft": True}
 
     def upload(self, release_id, path):
@@ -77,12 +79,21 @@ class ReleaseTests(unittest.TestCase):
             "configuration_sha256": {name: sha256(self.root / name) for name in recipe_files},
             "compiler": {"version": "sing-box version 1.14.4", "source_format_version": 3,
                          "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False},
-            "scope": {"domains_only": True, "personal_rules_included": False, "router_access": False,
+            "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": False, "dns_configuration_included": False},
+                      "ip_rules_included": True, "dns_configuration_included": False},
             "output": {"total_conditions": 3, "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
                        "files": {name: sha256(self.candidate / name) for name in BUILD_FILES - {"manifest.json", "report.html"}}},
             "validation": {"baseline": "previous-successful-or-approved-manifest", "warnings": []},
+            "service_networks": {
+                "sources": [{"id": "telegram", "url": "https://core.telegram.org/resources/cidr.txt"}],
+                "validation": {"baseline": "first-service-build", "warnings": []},
+                "output": {"total_prefixes": 2, "ipv4_prefixes": 1, "ipv6_prefixes": 1,
+                           "ipv4_addresses": 16384, "ipv6_addresses": 2 ** 80,
+                           "srs_bytes": (self.candidate / "blocked-services-ip.srs").stat().st_size},
+                "compiler": {"version": "sing-box version 1.14.4", "source_format_version": 3,
+                             "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False},
+            },
         }
         self.write_manifest()
         self.assets = self.root / "release"
@@ -105,9 +116,56 @@ class ReleaseTests(unittest.TestCase):
             verify_candidate(self.candidate, self.root, self.commit)
 
     def test_corrupted_binary_fails_before_publication(self):
-        (self.candidate / "blocked-domains.srs").write_bytes(b"bad transfer")
-        with self.assertRaisesRegex(PublishError, "checksum mismatch"):
+        for name in ("blocked-domains.srs", "blocked-services-ip.srs"):
+            with self.subTest(name=name):
+                path = self.candidate / name
+                original = path.read_bytes()
+                path.write_bytes(b"bad transfer")
+                with self.assertRaisesRegex(PublishError, "checksum mismatch"):
+                    verify_candidate(self.candidate, self.root, self.commit)
+                path.write_bytes(original)
+
+    def test_missing_service_binary_fails_before_publication(self):
+        (self.candidate / "blocked-services-ip.srs").unlink()
+        with self.assertRaisesRegex(PublishError, "artifact inventory"):
             verify_candidate(self.candidate, self.root, self.commit)
+
+    def test_first_service_artifact_keeps_existing_domain_baseline(self):
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit,
+                                         allow_initial_baseline=False), self.manifest)
+        self.manifest["service_networks"]["validation"]["baseline"] = "previous-service-build"
+        self.write_manifest()
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
+
+    def test_service_evidence_and_counts_must_be_complete_and_valid(self):
+        original = copy.deepcopy(self.manifest)
+        failures = [
+            ("output", "total_prefixes", 0), ("output", "ipv4_prefixes", 0),
+            ("output", "ipv6_prefixes", 0), ("output", "ipv4_addresses", 0),
+            ("output", "ipv6_addresses", 0), ("output", "ipv6_addresses", True),
+            ("output", "total_prefixes", 99), ("output", "srs_bytes", 1),
+            ("compiler", "roundtrip", "failed"), ("compiler", "sing_box_check", "failed"),
+            ("compiler", "version", "sing-box version 1.0"),
+            ("compiler", "network_service_started", True),
+            ("validation", "baseline", "first-build"), ("validation", "warnings", ["review"]),
+        ]
+        for section, key, value in failures:
+            with self.subTest(section=section, key=key, value=value):
+                self.manifest = copy.deepcopy(original)
+                self.manifest["service_networks"][section][key] = value
+                self.write_manifest()
+                with self.assertRaises(PublishError):
+                    verify_candidate(self.candidate, self.root, self.commit)
+        for section in (None, "sources", "compiler", "output", "validation"):
+            with self.subTest(missing=section):
+                self.manifest = copy.deepcopy(original)
+                if section is None:
+                    del self.manifest["service_networks"]
+                else:
+                    del self.manifest["service_networks"][section]
+                self.write_manifest()
+                with self.assertRaises(PublishError):
+                    verify_candidate(self.candidate, self.root, self.commit)
 
     def test_first_build_can_publish_to_a_new_repository(self):
         self.manifest["validation"] = validate_previous(None, [], 3, {})
@@ -159,11 +217,12 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual({p.name for p in self.assets.iterdir()}, RELEASE_FILES)
         checksums = parse_checksums((self.assets / "SHA256SUMS").read_text(), RELEASE_FILES - {"SHA256SUMS"})
         self.assertTrue(all(sha256(self.assets / name) == digest for name, digest in checksums.items()))
-        with gzip.open(self.assets / "blocked-domains.json.gz", "rb") as source:
-            self.assertEqual(source.read(), (self.candidate / "blocked-domains.json").read_bytes())
         second = self.root / "second-release"
         prepare_assets(self.candidate, second, self.manifest, "owner/Routing", "124", "1")
-        self.assertEqual(sha256(self.assets / "blocked-domains.json.gz"), sha256(second / "blocked-domains.json.gz"))
+        for name in ("blocked-domains", "blocked-services-ip"):
+            with gzip.open(self.assets / (name + ".json.gz"), "rb") as source:
+                self.assertEqual(source.read(), (self.candidate / (name + ".json")).read_bytes())
+            self.assertEqual(sha256(self.assets / (name + ".json.gz")), sha256(second / (name + ".json.gz")))
 
     def test_fingerprint_ignores_time_but_tracks_binary_and_recipe(self):
         changed = copy.deepcopy(self.manifest)
@@ -174,6 +233,43 @@ class ReleaseTests(unittest.TestCase):
         changed = copy.deepcopy(self.manifest)
         changed["output"]["files"]["blocked-domains.srs"] = "1" * 64
         self.assertNotEqual(fingerprint(changed), fingerprint(self.manifest))
+        changed = copy.deepcopy(self.manifest)
+        changed["output"]["files"]["blocked-services-ip.srs"] = "2" * 64
+        self.assertNotEqual(fingerprint(changed), fingerprint(self.manifest))
+
+    def test_only_service_binary_change_creates_a_new_release(self):
+        github = FakeGitHub()
+        self.publish_to(github)
+        previous_fingerprint = self.metadata["fingerprint"]
+        previous_domain_hash = self.metadata["srs_sha256"]
+        path = self.candidate / "blocked-services-ip.srs"
+        path.write_bytes(b"new app networks")
+        self.manifest["output"]["files"][path.name] = sha256(path)
+        self.manifest["service_networks"]["output"]["srs_bytes"] = path.stat().st_size
+        self.write_manifest()
+        self.assets = self.root / "next-release"
+        self.metadata = prepare_assets(self.candidate, self.assets, self.manifest, "owner/Routing", "124", "1")
+        self.assertEqual(self.metadata["srs_sha256"], previous_domain_hash)
+        self.assertNotEqual(self.metadata["fingerprint"], previous_fingerprint)
+        github.events.clear()
+        self.assertEqual(self.publish_to(github, "rules-124-1")["status"], "published")
+        self.assertIn("draft", github.events)
+
+    def test_previous_domain_only_release_is_upgraded_without_resetting_domains(self):
+        github = FakeGitHub()
+        self.publish_to(github)
+        metadata_asset = next(a for a in github.existing["assets"] if a["name"] == "release.json")
+        previous = copy.deepcopy(self.metadata)
+        previous["fingerprint"] = hashlib.sha256(json_bytes({
+            "schema_version": 1, "srs_sha256": previous["srs_sha256"],
+            "configuration_sha256": self.manifest["configuration_sha256"],
+        })).hexdigest()
+        del previous["service_srs_sha256"]
+        github.stored[metadata_asset["id"]] = json_bytes(previous)
+        github.existing["assets"] = [a for a in github.existing["assets"] if not a["name"].startswith("blocked-services-ip")]
+        github.events.clear()
+        self.assertEqual(self.publish_to(github, "rules-124-1")["status"], "published")
+        self.assertIn("draft", github.events)
 
     def test_publish_only_after_every_draft_asset_is_downloaded_and_verified(self):
         github = FakeGitHub()
@@ -181,17 +277,20 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(github.events[:2], ["latest", "draft"])
         self.assertEqual(github.events[-1], "publish")
         self.assertEqual(sum(e.startswith("download:") for e in github.events), len(RELEASE_FILES))
+        self.assertIn("blocked-services-ip.srs", github.body)
+        self.assertIn("для DNS-правил используйте только доменный набор", github.body)
 
     def test_upload_or_verification_failure_keeps_previous_release(self):
         for failure in ("fail_upload", "corrupt_download"):
-            with self.subTest(failure=failure):
-                old = {"assets": [], "tag_name": "previous"}
-                github = FakeGitHub(old)
-                setattr(github, failure, "blocked-domains.srs")
-                with self.assertRaises(PublishError):
-                    self.publish_to(github)
-                self.assertIs(github.existing, old)
-                self.assertNotIn("publish", github.events)
+            for name in ("blocked-domains.srs", "blocked-services-ip.srs"):
+                with self.subTest(failure=failure, name=name):
+                    old = {"assets": [], "tag_name": "previous"}
+                    github = FakeGitHub(old)
+                    setattr(github, failure, name)
+                    with self.assertRaises(PublishError):
+                        self.publish_to(github)
+                    self.assertIs(github.existing, old)
+                    self.assertNotIn("publish", github.events)
 
     def test_unchanged_result_is_verified_without_creating_another_release(self):
         github = FakeGitHub()
@@ -201,16 +300,31 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("draft", github.events)
         self.assertNotIn("publish", github.events)
         self.assertIn("download:blocked-domains.srs", github.events)
-        github.corrupt_download = "blocked-domains.srs"
-        with self.assertRaises(PublishError):
+        self.assertIn("download:blocked-services-ip.srs", github.events)
+        for name in ("blocked-domains.srs", "blocked-services-ip.srs", "blocked-services-ip.srs.sha256"):
+            with self.subTest(name=name):
+                github.corrupt_download = name
+                with self.assertRaises(PublishError):
+                    self.publish_to(github)
+
+    def test_unchanged_release_rejects_inconsistent_service_hash_metadata(self):
+        github = FakeGitHub()
+        self.publish_to(github)
+        metadata_asset = next(a for a in github.existing["assets"] if a["name"] == "release.json")
+        previous = copy.deepcopy(self.metadata)
+        previous["service_srs_sha256"] = "0" * 64
+        github.stored[metadata_asset["id"]] = json_bytes(previous)
+        with self.assertRaisesRegex(PublishError, "inconsistent binary metadata"):
             self.publish_to(github)
 
     def test_incomplete_unchanged_release_does_not_silently_pass(self):
-        github = FakeGitHub()
-        self.publish_to(github)
-        github.existing["assets"] = [a for a in github.existing["assets"] if a["name"] != "report.html"]
-        with self.assertRaises(PublishError):
-            self.publish_to(github)
+        for name in ("report.html", "blocked-services-ip.srs", "blocked-services-ip.srs.sha256"):
+            with self.subTest(name=name):
+                github = FakeGitHub()
+                self.publish_to(github)
+                github.existing["assets"] = [a for a in github.existing["assets"] if a["name"] != name]
+                with self.assertRaises(PublishError):
+                    self.publish_to(github)
 
     def test_redirect_drops_credentials_and_rejects_http(self):
         handler = CredentialSafeRedirect()

@@ -22,14 +22,17 @@ class PublishError(Exception):
 
 BUILD_FILES = {
     "blocked-domains.srs", "blocked-domains.json", "blocked-domains.txt",
+    "blocked-services-ip.srs", "blocked-services-ip.json", "blocked-services-ip.txt",
     "manifest.json", "excluded.json", "probes.json", "report.html",
 }
 RELEASE_FILES = {
     "blocked-domains.srs", "blocked-domains.srs.sha256", "blocked-domains.json.gz",
+    "blocked-services-ip.srs", "blocked-services-ip.srs.sha256", "blocked-services-ip.json.gz",
     "manifest.json", "excluded.json", "probes.json", "report.html", "release.json",
     "SHA256SUMS",
 }
 MAX_ASSET_BYTES = 128 * 1024 * 1024
+DATASETS = ("blocked-domains", "blocked-services-ip")
 
 
 def sha256(path):
@@ -59,6 +62,15 @@ def initial_baseline_allowed(latest_release, reset_baseline, event):
     return latest_release is None or reset_baseline
 
 
+def verify_compiler(compiler, lock):
+    if (not isinstance(compiler, dict)
+            or compiler.get("version") != "sing-box version " + lock["sing_box_version"]
+            or compiler.get("source_format_version") != lock["source_format_version"]
+            or compiler.get("roundtrip") != "passed" or compiler.get("sing_box_check") != "passed"
+            or compiler.get("network_service_started") is not False):
+        raise PublishError("Compiler validation is missing or failed")
+
+
 def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     if {p.name for p in directory.iterdir()} != BUILD_FILES | {"SHA256SUMS"}:
         raise PublishError("Unexpected build artifact inventory")
@@ -80,16 +92,11 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     if manifest["configuration_sha256"] != recipe:
         raise PublishError("Artifact recipe does not match this checkout")
     lock = json.loads((root / "config/tools-lock.json").read_text(encoding="utf-8"))
-    compiler = manifest["compiler"]
-    if (compiler["version"] != "sing-box version " + lock["sing_box_version"]
-            or compiler["source_format_version"] != lock["source_format_version"]
-            or compiler["roundtrip"] != "passed" or compiler["sing_box_check"] != "passed"
-            or compiler["network_service_started"] is not False):
-        raise PublishError("Compiler validation is missing or failed")
+    verify_compiler(manifest["compiler"], lock)
     scope = manifest["scope"]
-    expected_scope = {"domains_only": True, "personal_rules_included": False, "router_access": False,
+    expected_scope = {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": False, "dns_configuration_included": False}
+                      "ip_rules_included": True, "dns_configuration_included": False}
     if scope != expected_scope:
         raise PublishError("Unexpected routing scope")
     output = manifest["output"]
@@ -100,6 +107,22 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
         raise PublishError("Manifest hashes do not match the candidate")
     if output["srs_bytes"] != (directory / "blocked-domains.srs").stat().st_size or output["total_conditions"] < 1:
         raise PublishError("Unexpected binary size or empty rule-set")
+    service = manifest.get("service_networks")
+    if not isinstance(service, dict) or not isinstance(service.get("sources"), list) or not service["sources"]:
+        raise PublishError("Service network sources are missing")
+    service_output = service.get("output", {})
+    positive_counts = ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "ipv4_addresses", "ipv6_addresses", "srs_bytes")
+    if (not isinstance(service_output, dict)
+            or any(type(service_output.get(key)) is not int or service_output[key] < 1 for key in positive_counts)
+            or service_output["total_prefixes"] != service_output["ipv4_prefixes"] + service_output["ipv6_prefixes"]
+            or service_output["srs_bytes"] != (directory / "blocked-services-ip.srs").stat().st_size):
+        raise PublishError("Unexpected service network counts or binary size")
+    verify_compiler(service.get("compiler"), lock)
+    service_validation = service.get("validation", {})
+    if (not isinstance(service_validation, dict)
+            or service_validation.get("baseline") not in {"first-service-build", "previous-service-build"}
+            or service_validation.get("warnings") != []):
+        raise PublishError("Service networks have an unknown baseline or unresolved validation warnings")
     validation = manifest["validation"]
     if validation["baseline"] == "first-build":
         expected = ["First build has no previous published version to compare."]
@@ -112,22 +135,27 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
 
 def fingerprint(manifest):
     # Fetch timestamps and provenance-only changes do not justify a new binary release.
-    identity = {"schema_version": 1, "srs_sha256": manifest["output"]["files"]["blocked-domains.srs"],
+    identity = {"schema_version": 1,
+                "srs_sha256": {name + ".srs": manifest["output"]["files"][name + ".srs"] for name in DATASETS},
                 "configuration_sha256": manifest["configuration_sha256"]}
     return hashlib.sha256(json_bytes(identity)).hexdigest()
 
 
 def prepare_assets(candidate, destination, manifest, repository, run_id, attempt):
     destination.mkdir(parents=True, exist_ok=False)
-    for name in ("blocked-domains.srs", "manifest.json", "excluded.json", "probes.json", "report.html"):
+    for name in ("manifest.json", "excluded.json", "probes.json", "report.html"):
         shutil.copyfile(candidate / name, destination / name)
-    with (candidate / "blocked-domains.json").open("rb") as source:
-        with (destination / "blocked-domains.json.gz").open("wb") as target:
-            with gzip.GzipFile(filename="", mode="wb", fileobj=target, mtime=0) as compressed:
-                shutil.copyfileobj(source, compressed)
+    for name in DATASETS:
+        shutil.copyfile(candidate / (name + ".srs"), destination / (name + ".srs"))
+        with (candidate / (name + ".json")).open("rb") as source:
+            with (destination / (name + ".json.gz")).open("wb") as target:
+                with gzip.GzipFile(filename="", mode="wb", fileobj=target, mtime=0) as compressed:
+                    shutil.copyfileobj(source, compressed)
+        digest = manifest["output"]["files"][name + ".srs"]
+        (destination / (name + ".srs.sha256")).write_bytes(f"{digest}  {name}.srs\n".encode("ascii"))
     digest = manifest["output"]["files"]["blocked-domains.srs"]
-    (destination / "blocked-domains.srs.sha256").write_bytes(f"{digest}  blocked-domains.srs\n".encode("ascii"))
     metadata = {"schema_version": 1, "fingerprint": fingerprint(manifest), "srs_sha256": digest,
+                "service_srs_sha256": manifest["output"]["files"]["blocked-services-ip.srs"],
                 "github_commit": manifest["environment"]["github_commit"], "built_at": manifest["built_at"],
                 "run_url": f"https://github.com/{repository}/actions/runs/{run_id}/attempts/{attempt}"}
     (destination / "release.json").write_bytes(json_bytes(metadata))
@@ -207,22 +235,30 @@ def publish(assets, manifest, metadata, github, tag):
             if previous.get("fingerprint") == metadata["fingerprint"]:
                 if set(inventory) != RELEASE_FILES or len(latest["assets"]) != len(RELEASE_FILES):
                     raise PublishError("Unchanged release has an incomplete asset inventory")
-                binary = github.download(inventory["blocked-domains.srs"])
-                checksum = github.download(inventory["blocked-domains.srs.sha256"], limit=1024)
-                if (hashlib.sha256(binary).hexdigest() != metadata["srs_sha256"]
-                        or checksum != (assets / "blocked-domains.srs.sha256").read_bytes()):
-                    raise PublishError("Unchanged release failed binary integrity verification")
+                for name, key in (("blocked-domains", "srs_sha256"), ("blocked-services-ip", "service_srs_sha256")):
+                    if previous.get(key) != metadata[key]:
+                        raise PublishError("Unchanged release has inconsistent binary metadata")
+                    binary = github.download(inventory[name + ".srs"])
+                    checksum = github.download(inventory[name + ".srs.sha256"], limit=1024)
+                    if (hashlib.sha256(binary).hexdigest() != metadata[key]
+                            or checksum != (assets / (name + ".srs.sha256")).read_bytes()):
+                        raise PublishError(f"Unchanged release failed binary integrity verification: {name}")
                 return {"status": "unchanged", "release_url": latest["html_url"], "tag": latest["tag_name"]}
     stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-domains.srs"
-    body = (f"Автоматическая доменная база для выборочного VPN.\n\n"
-            f"Условий: **{manifest['output']['total_conditions']:,}**. "
+    service_stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-services-ip.srs"
+    body = (f"Автоматические наборы для выборочного VPN: домены и выделенные сети приложений.\n\n"
+            f"Доменных условий: **{manifest['output']['total_conditions']:,}**; "
+            f"IP-префиксов сервисов: **{manifest['service_networks']['output']['total_prefixes']:,}**. "
             f"sing-box: `{manifest['compiler']['version']}`.\n\n"
-            f"[Постоянная ссылка на .srs]({stable}) · [Проверенная сборка]({metadata['run_url']})\n\n"
-            f"SHA-256: `{metadata['srs_sha256']}`\n\n"
-            "Исходник опубликован в `blocked-domains.json.gz`; происхождение и проверки — в `manifest.json`. "
+            f"[Домены .srs]({stable}) · [IP-сети приложений .srs]({service_stable}) · [Проверенная сборка]({metadata['run_url']})\n\n"
+            f"SHA-256 доменов: `{metadata['srs_sha256']}`\n\n"
+            f"SHA-256 IP-сетей: `{metadata['service_srs_sha256']}`\n\n"
+            "Исходники опубликованы в `blocked-domains.json.gz` и `blocked-services-ip.json.gz`; происхождение и проверки — в `manifest.json`. "
             "Контрольные суммы всех вложений — в `SHA256SUMS`.\n\n"
             "Состав определяется публичными источниками и политикой репозитория. "
-            "Набор содержит только доменные условия. Маршруты и DNS задаются в конфигурации sing-box.")
+            "IP-набор покрывает приложения, подключающиеся без доменного имени. "
+            "В маршрутизации используются оба набора; для DNS-правил используйте только доменный набор. "
+            "Маршруты и DNS задаются в конфигурации sing-box.")
     release = github.create_draft(tag, manifest["environment"]["github_commit"],
                                   "Routing · " + manifest["built_at"], body)
     if release.get("draft") is not True:
@@ -270,6 +306,7 @@ def main():
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
             stream.write(f"Release **{result['status']}**: [{result['tag']}]({result['release_url']})\n\n")
             stream.write(f"SRS SHA-256: `{metadata['srs_sha256']}`\n")
+            stream.write(f"Service IP SRS SHA-256: `{metadata['service_srs_sha256']}`\n")
 
 
 if __name__ == "__main__":

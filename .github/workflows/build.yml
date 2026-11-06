@@ -1,4 +1,4 @@
-name: Build selective VPN domain list
+name: Build selective VPN rule sets
 
 on:
   workflow_dispatch:

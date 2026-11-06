@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "note": "Only reviewed service-owned destination feeds. Do not import shared cloud/CDN ASN ranges or DNS-resolved blocked-site IPs.",
+  "sources": [
+    {
+      "id": "telegram-networks",
+      "service": "Telegram",
+      "url": "https://core.telegram.org/resources/cidr.txt",
+      "reference": "https://core.telegram.org/mtproto/transports",
+      "description": "Official Telegram server networks; arbitrary peer-to-peer call destinations are outside this feed.",
+      "format": "cidr-lines",
+      "max_bytes": 65536,
+      "min_entries": 10,
+      "max_entries": 64,
+      "min_ipv4_entries": 5,
+      "min_ipv6_entries": 3,
+      "min_ipv4_prefix_length": 20,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 65536,
+      "max_ipv6_addresses": 158456325028528675187087900672
+    },
+    {
+      "id": "telegram-as44907",
+      "service": "Telegram",
+      "url": "https://stat.ripe.net/data/ris-prefixes/data.json?resource=AS44907&list_prefixes=true&types=o",
+      "reference": "https://stat.ripe.net/data/as-overview/data.json?resource=AS44907",
+      "description": "Currently observed originating prefixes of a reviewed Telegram-operated AS; identity and snapshot freshness verified.",
+      "format": "ripe-ris-prefixes",
+      "asn": 44907,
+      "expected_holder": "Telegram_Messenger_CDN Telegram Messenger Inc",
+      "max_snapshot_age_hours": 48,
+      "identity_source": {
+        "id": "telegram-as44907-identity",
+        "url": "https://stat.ripe.net/data/as-overview/data.json?resource=AS44907",
+        "max_bytes": 262144
+      },
+      "max_bytes": 262144,
+      "min_entries": 2,
+      "max_entries": 96,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 1,
+      "min_ipv4_prefix_length": 20,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 65536,
+      "max_ipv6_addresses": 158456325028528675187087900672
+    },
+    {
+      "id": "telegram-as59930",
+      "service": "Telegram",
+      "url": "https://stat.ripe.net/data/ris-prefixes/data.json?resource=AS59930&list_prefixes=true&types=o",
+      "reference": "https://stat.ripe.net/data/as-overview/data.json?resource=AS59930",
+      "description": "Currently observed originating prefixes of a reviewed Telegram-operated AS; identity and snapshot freshness verified.",
+      "format": "ripe-ris-prefixes",
+      "asn": 59930,
+      "expected_holder": "Telegram_Messenger Telegram Messenger Inc",
+      "max_snapshot_age_hours": 48,
+      "identity_source": {
+        "id": "telegram-as59930-identity",
+        "url": "https://stat.ripe.net/data/as-overview/data.json?resource=AS59930",
+        "max_bytes": 262144
+      },
+      "max_bytes": 262144,
+      "min_entries": 2,
+      "max_entries": 96,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 1,
+      "min_ipv4_prefix_length": 20,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 65536,
+      "max_ipv6_addresses": 158456325028528675187087900672
+    },
+    {
+      "id": "telegram-as62014",
+      "service": "Telegram",
+      "url": "https://stat.ripe.net/data/ris-prefixes/data.json?resource=AS62014&list_prefixes=true&types=o",
+      "reference": "https://stat.ripe.net/data/as-overview/data.json?resource=AS62014",
+      "description": "Currently observed originating prefixes of a reviewed Telegram-operated AS; identity and snapshot freshness verified.",
+      "format": "ripe-ris-prefixes",
+      "asn": 62014,
+      "expected_holder": "Telegram Telegram Messenger Inc",
+      "max_snapshot_age_hours": 48,
+      "identity_source": {
+        "id": "telegram-as62014-identity",
+        "url": "https://stat.ripe.net/data/as-overview/data.json?resource=AS62014",
+        "max_bytes": 262144
+      },
+      "max_bytes": 262144,
+      "min_entries": 2,
+      "max_entries": 96,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 1,
+      "min_ipv4_prefix_length": 20,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 65536,
+      "max_ipv6_addresses": 158456325028528675187087900672
+    },
+    {
+      "id": "telegram-as62041",
+      "service": "Telegram",
+      "url": "https://stat.ripe.net/data/ris-prefixes/data.json?resource=AS62041&list_prefixes=true&types=o",
+      "reference": "https://stat.ripe.net/data/as-overview/data.json?resource=AS62041",
+      "description": "Currently observed originating prefixes of a reviewed Telegram-operated AS; identity and snapshot freshness verified.",
+      "format": "ripe-ris-prefixes",
+      "asn": 62041,
+      "expected_holder": "Telegram Telegram Messenger Inc",
+      "max_snapshot_age_hours": 48,
+      "identity_source": {
+        "id": "telegram-as62041-identity",
+        "url": "https://stat.ripe.net/data/as-overview/data.json?resource=AS62041",
+        "max_bytes": 262144
+      },
+      "max_bytes": 262144,
+      "min_entries": 2,
+      "max_entries": 96,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 1,
+      "min_ipv4_prefix_length": 20,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 65536,
+      "max_ipv6_addresses": 158456325028528675187087900672
+    },
+    {
+      "id": "telegram-as211157",
+      "service": "Telegram",
+      "url": "https://stat.ripe.net/data/ris-prefixes/data.json?resource=AS211157&list_prefixes=true&types=o",
+      "reference": "https://stat.ripe.net/data/as-overview/data.json?resource=AS211157",
+      "description": "Currently observed originating prefixes of a reviewed Telegram-operated AS; identity and snapshot freshness verified.",
+      "format": "ripe-ris-prefixes",
+      "asn": 211157,
+      "expected_holder": "Telegram-AS Telegram Messenger Inc",
+      "max_snapshot_age_hours": 48,
+      "identity_source": {
+        "id": "telegram-as211157-identity",
+        "url": "https://stat.ripe.net/data/as-overview/data.json?resource=AS211157",
+        "max_bytes": 262144
+      },
+      "max_bytes": 262144,
+      "min_entries": 2,
+      "max_entries": 96,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 1,
+      "min_ipv4_prefix_length": 20,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 65536,
+      "max_ipv6_addresses": 158456325028528675187087900672
+    }
+  ],
+  "validation": {
+    "max_drop_fraction": 0.25,
+    "max_growth_fraction": 0.5
+  }
+}
