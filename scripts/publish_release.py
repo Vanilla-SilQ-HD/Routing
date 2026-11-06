@@ -53,7 +53,13 @@ def parse_checksums(text, expected):
     return result
 
 
-def verify_candidate(directory, root, commit):
+def initial_baseline_allowed(latest_release, reset_baseline, event):
+    if reset_baseline and event != "workflow_dispatch":
+        raise PublishError("Baseline reset requires an explicit manual workflow run")
+    return latest_release is None or reset_baseline
+
+
+def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     if {p.name for p in directory.iterdir()} != BUILD_FILES | {"SHA256SUMS"}:
         raise PublishError("Unexpected build artifact inventory")
     for path in directory.iterdir():
@@ -94,8 +100,13 @@ def verify_candidate(directory, root, commit):
         raise PublishError("Manifest hashes do not match the candidate")
     if output["srs_bytes"] != (directory / "blocked-domains.srs").stat().st_size or output["total_conditions"] < 1:
         raise PublishError("Unexpected binary size or empty rule-set")
-    if manifest["validation"]["warnings"]:
-        raise PublishError("Build has unresolved validation warnings")
+    validation = manifest["validation"]
+    if validation["baseline"] == "first-build":
+        expected = ["First build has no previous published version to compare."]
+        if not allow_initial_baseline or validation["warnings"] != expected:
+            raise PublishError("Initial baseline requires a first release or an explicit manual reset")
+    elif validation["baseline"] != "previous-successful-or-approved-manifest" or validation["warnings"]:
+        raise PublishError("Build has an unknown baseline or unresolved validation warnings")
     return manifest
 
 
@@ -211,7 +222,7 @@ def publish(assets, manifest, metadata, github, tag):
             "Исходник опубликован в `blocked-domains.json.gz`; происхождение и проверки — в `manifest.json`. "
             "Контрольные суммы всех вложений — в `SHA256SUMS`.\n\n"
             "Состав определяется публичными источниками и политикой репозитория. "
-            "Роутер не подключался; личные IP, рабочие VPN и DNS не изменялись.")
+            "Набор содержит только доменные условия. Маршруты и DNS задаются в конфигурации sing-box.")
     release = github.create_draft(tag, manifest["environment"]["github_commit"],
                                   "Routing · " + manifest["built_at"], body)
     if release.get("draft") is not True:
@@ -246,9 +257,14 @@ def main():
     if not run_id.isdigit() or not attempt.isdigit():
         raise PublishError("Invalid workflow run identity")
     candidate, assets = Path(args.input), Path(args.output)
-    manifest = verify_candidate(candidate, Path.cwd(), commit)
+    github = GitHub(repository, os.environ["GITHUB_TOKEN"])
+    allow_initial = initial_baseline_allowed(github.latest(),
+        os.environ.get("RESET_BASELINE", "false").lower() == "true", os.environ["GITHUB_EVENT_NAME"])
+    manifest = verify_candidate(candidate, Path.cwd(), commit, allow_initial_baseline=allow_initial)
+    if manifest["validation"]["baseline"] == "first-build":
+        print("Initial baseline accepted: first release or explicitly requested manual reset.", flush=True)
     metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt)
-    result = publish(assets, manifest, metadata, GitHub(repository, os.environ["GITHUB_TOKEN"]), f"rules-{run_id}-{attempt}")
+    result = publish(assets, manifest, metadata, github, f"rules-{run_id}-{attempt}")
     print(json.dumps(result), flush=True)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:

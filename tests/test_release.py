@@ -10,8 +10,9 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from publish_release import (BUILD_FILES, RELEASE_FILES, CredentialSafeRedirect, PublishError,
-                             fingerprint, json_bytes, parse_checksums, prepare_assets, publish,
+                             fingerprint, initial_baseline_allowed, json_bytes, parse_checksums, prepare_assets, publish,
                              sha256, verify_candidate)
+from build import validate_previous
 
 
 class FakeGitHub:
@@ -81,7 +82,7 @@ class ReleaseTests(unittest.TestCase):
                       "ip_rules_included": False, "dns_configuration_included": False},
             "output": {"total_conditions": 3, "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
                        "files": {name: sha256(self.candidate / name) for name in BUILD_FILES - {"manifest.json", "report.html"}}},
-            "validation": {"warnings": []},
+            "validation": {"baseline": "previous-successful-or-approved-manifest", "warnings": []},
         }
         self.write_manifest()
         self.assets = self.root / "release"
@@ -107,6 +108,33 @@ class ReleaseTests(unittest.TestCase):
         (self.candidate / "blocked-domains.srs").write_bytes(b"bad transfer")
         with self.assertRaisesRegex(PublishError, "checksum mismatch"):
             verify_candidate(self.candidate, self.root, self.commit)
+
+    def test_first_build_can_publish_to_a_new_repository(self):
+        self.manifest["validation"] = validate_previous(None, [], 3, {})
+        self.write_manifest()
+        allowed = initial_baseline_allowed(None, False, "workflow_dispatch")
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit,
+                                         allow_initial_baseline=allowed), self.manifest)
+
+    def test_existing_release_cannot_silently_lose_its_baseline(self):
+        self.manifest["validation"] = validate_previous(None, [], 3, {})
+        self.write_manifest()
+        allowed = initial_baseline_allowed({"id": 10}, False, "schedule")
+        with self.assertRaises(PublishError):
+            verify_candidate(self.candidate, self.root, self.commit, allow_initial_baseline=allowed)
+
+    def test_explicit_manual_reset_can_publish_but_unexpected_warnings_still_fail(self):
+        self.manifest["validation"] = validate_previous(None, [], 3, {})
+        self.write_manifest()
+        allowed = initial_baseline_allowed({"id": 10}, True, "workflow_dispatch")
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit,
+                                         allow_initial_baseline=allowed), self.manifest)
+        self.manifest["validation"]["warnings"].append("Unexpected source problem")
+        self.write_manifest()
+        with self.assertRaises(PublishError):
+            verify_candidate(self.candidate, self.root, self.commit, allow_initial_baseline=allowed)
+        with self.assertRaises(PublishError):
+            initial_baseline_allowed({"id": 10}, True, "schedule")
 
     def test_unsafe_or_unvalidated_build_cannot_be_published(self):
         original = copy.deepcopy(self.manifest)

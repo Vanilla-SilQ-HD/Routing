@@ -104,4 +104,5 @@ jobs:
       - name: Verify files, upload a draft and publish it as Latest
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RESET_BASELINE: ${{ inputs.reset_baseline || false }}
         run: python scripts/publish_release.py --input incoming/dist --output release

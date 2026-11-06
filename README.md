@@ -1,128 +1,78 @@
 # Routing
 
-[![Build selective VPN domain list](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg)](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml)
+[![Сборка и публикация](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg)](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml)
 
-Автоматическая доменная база для выборочного VPN.
+Автообновляемый список доменов для выборочной маршрутизации в **sing-box**. Помогает направлять заблокированные и недоступные из России ресурсы через VPN, оставляя остальной трафик напрямую.
 
-Подготовка для sing-box: VPN по доменным условиям из автоматически обновляемых источников, Direct по умолчанию. Проект **не подключается к роутеру, не редактирует маршруты/DNS и не содержит личных IP, рабочих VPN, паролей или API-ключей**.
+**[Скачать .srs](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs)** · [Релизы и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [SHA-256](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs.sha256)
 
-Репозиторий: [Vanilla-SilQ-HD/Routing](https://github.com/Vanilla-SilQ-HD/Routing). GitHub Actions собирает и проверяет набор по расписанию, затем публикует изменившийся результат в [GitHub Releases](https://github.com/Vanilla-SilQ-HD/Routing/releases). Workflow не подключается к роутеру. Подключение базы к AWG Manager — отдельный этап.
+## Подключение
 
-**Постоянная ссылка:** [blocked-domains.srs](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs).
-Рядом доступна [контрольная сумма SHA-256](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs.sha256). Ссылки публичные, авторизация и токен не нужны; GitHub перенаправляет их на вложение последнего опубликованного релиза. После смены релиза URL остаётся прежним.
+Постоянный URL для удалённого набора правил:
 
-## Состав
-
-- `config/sources.json`: исходники Antifilter full, Antifilter community и Re-filter — те же доменные источники, из которых RunetFreedom собирает `ru-blocked-all`; дополнительно itdog inside и unavailable-in-russia.
-- `config/policy.json`: правила обработки широких записей, сохранения зависимостей отдельных сервисов и ограничения резких изменений базы.
-- `config/probes.json`: только примеры для отчёта. **Не являются принудительными маршрутами или исключениями.** Новое включение домена в upstream может изменить результат следующей сборки.
-- `config/tools-lock.json`: официальный sing-box 1.14.4 для Windows/Linux amd64, URL и проверенные SHA-256 архивов. Формат исходника rule-set — v3, доменные условия. Для роутера с 1.15 необходимо дополнительно проверить установленную AWGM-сборку на этапе внедрения.
-- `scripts/build.py`: загрузка, фильтрация, минимизация, компиляция и проверка.
-- `scripts/publish_release.py`: повторная проверка файлов и рецепта сборки, загрузка в черновик Releases, проверка загруженных байтов и публикация.
-- `.github/workflows/build.yml`: четыре сборки в сутки. Сборочный job имеет только права чтения; отдельный job публикации после успешной сборки — `contents: write`. Без SSH и без вызовов роутера.
-
-## Как сохраняется смысл правил
-
-1. Исходники загружаются до минимизации родительскими доменами. Фиксируются URL, время получения, Last-Modified/ETag (если доступны) и SHA-256 каждого файла.
-2. IDN приводятся к IDNA2008/UTS46; IP, URL и неверные записи не превращаются в доменные правила. Точный `domain` не расширяется до `domain_suffix`.
-3. Удаляются условия для целых зон и общих платформ. PSL — инструмент поиска широких записей, а не база блокировок. PRIVATE wildcard не используется для удаления конкретных арендаторов (например, отдельного `tenant.eth.limo`).
-4. Учитываются служебные домены отдельных ограниченных сервисов: например, `claudeusercontent.com` входит в PSL, но нужен Claude. Такие исключения **только сохраняют уже присутствующее в источниках условие** и ничего не добавляют самостоятельно.
-5. При удалении общей записи `googleapis.com` сохраняются отдельно указанные поддомены, например `generativelanguage.googleapis.com`. Правило Direct на весь Google в конфиг не добавляется.
-6. После фильтрации удаляются дубли и условия, полностью покрытые существующим суффиксом. Родительские домены автоматически не создаются.
-7. Один набор содержит только `domain` и `domain_suffix`; никаких категорий «все ИИ», GeoIP, ASN, IP-подсетей, портов и персональных исключений.
-
-## Локальный запуск
-
-Windows PowerShell:
-
-```powershell
-python -m venv .venv
-& ./.venv/Scripts/python.exe -m pip install --require-hashes -r requirements.txt
-& ./.venv/Scripts/python.exe -m unittest discover -s tests -v
-& ./.venv/Scripts/python.exe scripts/install_tools.py
-& ./.venv/Scripts/python.exe scripts/build.py --output dist/first
+```text
+https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs
 ```
 
-Linux:
+Пример для **sing-box 1.14+**. Это фрагмент для существующего конфига: `vpn` и `direct` должны совпадать с тегами ваших подключений.
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --require-hashes -r requirements.txt
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/install_tools.py
-.venv/bin/python scripts/build.py --output dist/first
+```json
+{
+  "experimental": {
+    "cache_file": { "enabled": true }
+  },
+  "route": {
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "routing",
+        "format": "binary",
+        "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs",
+        "http_client": { "detour": "vpn" },
+        "update_interval": "6h"
+      }
+    ],
+    "rules": [
+      { "action": "sniff" },
+      { "rule_set": ["routing"], "action": "route", "outbound": "vpn" }
+    ],
+    "final": "direct"
+  }
+}
 ```
 
-Повторная сборка без сети, из проверенного кеша, с контролем изменения количества условий:
+Совпадения с набором идут через `vpn`, остальные соединения — через `direct`. Добавьте фрагмент к существующим настройкам; свои приоритетные исключения разместите перед правилом `routing`. Другие правила VPN в конфиге могут изменить эту схему.
 
-```powershell
-& ./.venv/Scripts/python.exe scripts/build.py --offline --previous dist/first/manifest.json --output dist/replay
-```
+Сам файл в примере скачивается через VPN и сохраняется в кеш. Для прямой загрузки укажите `"detour": "direct"`. В панели управления, например AWG Manager, используются те же параметры: удалённый набор, формат `binary`, URL выше и нужное VPN-подключение.
 
-Каталог результата должен быть новым или пустым. Сборка выполняется во временном каталоге и переносится в результат только после всех проверок. Неудачная сборка не перезаписывает предыдущую.
+Подробнее: [удалённые наборы sing-box](https://sing-box.sagernet.org/configuration/rule-set/). DNS и получение имени назначения должны быть настроены в вашем клиенте; один список доменов этого не заменяет.
 
-## Что выдаёт сборка
+## Что входит в список
 
-- `blocked-domains.srs` — готовый бинарный набор, пока не подключён к роутеру.
-- `blocked-domains.json` — читаемый исходник sing-box.
-- `blocked-domains.txt` — текстовые условия `domain:`/`full:`.
-- `report.html` — отчёт на русском с источниками, примерами и удалёнными широкими записями.
-- `manifest.json` — происхождение, размеры, пересечения, хеши, инструменты и результаты проверок.
-- `excluded.json` — все широкие условия, исключённые политикой, с причинами.
-- `probes.json` — объяснение совпадения каждого проверочного домена.
-- `SHA256SUMS` — контрольные суммы файлов результата.
+База объединяет доменные записи из пяти источников:
 
-Компилятор выполняет `rule-set compile`, затем `rule-set decompile` с точным сравнением условий. `sing-box check` проверяет локальный тестовый конфиг. Демон/прокси не запускается, пакеты через него не отправляются. Это проверка данных, **не измерение маршрутов или памяти роутера**.
-
-## Автосборка в GitHub Actions
-
-Workflow запускается в ветке `main` по расписанию `35 0,6,12,18 * * *` UTC (03:35, 09:35, 15:35, 21:35 по Москве), вручную через **Actions → Build selective VPN domain list → Run workflow** и при изменении файлов сборки. GitHub может задерживать плановые запуски.
-
-В workflow проверяются тесты, скачивается закреплённый компилятор, восстанавливается manifest последнего успешного запуска этой ветки, собираются свежие данные и сохраняются артефакты. Затем отдельный job повторно проверяет контрольные суммы, соответствие исходному коммиту и рецепту, результаты компилятора и доменную область данных. При потере обязательного источника, слишком малом наборе, превышении доли неверных записей или резком изменении размера сборка завершается ошибкой. Частичный набор вместо полного не выпускается.
-
-Падение количества условий больше 20% или рост больше 50% относительно предыдущего результата требуют просмотра. Перерыв дольше семи дней тоже требует просмотра перед возобновлением. Для намеренного изменения предусмотрен явный ручной `reset_baseline`; он не включается автоматически. Артефакт с manifest хранится 90 дней, полный результат с копиями исходных файлов — 2 дня, чтобы не накапливать большие объёмы хранения. Плановые workflow в неактивных публичных репозиториях могут отключаться GitHub; это нужно учесть при включении постоянного обновления.
-
-## Автопубликация в Releases
-
-1. Публикация разрешена только из `main` после успешной сборки. Используется временный `GITHUB_TOKEN` с правами на содержимое этого репозитория; отдельный PAT не нужен.
-2. Создаётся новый **черновик** с уникальным тегом `rules-<run_id>-<attempt>`, привязанным к коммиту сборки. В него загружаются все файлы; их размеры, доступные хеши GitHub и байты при обратном скачивании проверяются.
-3. Только после проверки всех вложений релиз публикуется и назначается **Latest**. Ошибка сборки или загрузки оставляет прежний опубликованный релиз доступным; неуспешный черновик может остаться для диагностики.
-4. Если `.srs` и хеши рецепта сборки не изменились, новый релиз не создаётся. Уже опубликованный бинарный файл повторно проверяется. Свежий отчёт каждой сборки остаётся в артефактах Actions; дата релиза означает дату изменения результата, а не последней проверки источников.
-5. Опубликованные версии не перезаписываются и не удаляются. Для фиксации конкретной версии используется ссылка вида `releases/download/rules-<run_id>-<attempt>/blocked-domains.srs`.
-
-Вложения релиза: `blocked-domains.srs`, `blocked-domains.srs.sha256`, сжатый исходник `blocked-domains.json.gz`, `manifest.json`, `excluded.json`, `probes.json`, `report.html`, `release.json` и `SHA256SUMS`. Последний содержит хеши **именно вложений релиза**; manifest также сохраняет хеши исходных несжатых файлов сборки. Полный текстовый список и снимки upstream доступны в полном артефакте Actions.
-
-Публичное скачивание и проверка SHA-256 в PowerShell:
-
-```powershell
-$release = Invoke-RestMethod 'https://api.github.com/repos/Vanilla-SilQ-HD/Routing/releases/latest'
-$base = "https://github.com/Vanilla-SilQ-HD/Routing/releases/download/$($release.tag_name)"
-Invoke-WebRequest "$base/blocked-domains.srs" -OutFile blocked-domains.srs
-Invoke-WebRequest "$base/blocked-domains.srs.sha256" -OutFile blocked-domains.srs.sha256
-$expected = (Get-Content blocked-domains.srs.sha256).Split(' ')[0]
-if ((Get-FileHash blocked-domains.srs -Algorithm SHA256).Hash -ne $expected) { throw 'SHA-256 mismatch' }
-```
-
-Для согласованной пары «файл + хеш» пример сначала фиксирует тег: между двумя отдельными обращениями к `latest` может появиться новый релиз. При ошибке источника опубликованная база остаётся предыдущей и постепенно устаревает; состояние обновления видно в Actions. Доступность GitHub/CDN и автоматическую загрузку на AWG Manager необходимо проверить отдельно на этапе внедрения. Публикация не меняет маршруты, рабочие VPN, защищённые IP или DNS.
-
-## Что необходимо понимать при просмотре
-
-- Полная база — это объединение выбранных источников после описанной фильтрации, а не доказательство текущей блокировки каждого домена вашим провайдером. В списках могут быть ограничения отдельных страниц, ошибочные и устаревшие записи. sing-box не различает пути HTTPS по этому набору.
-- Например, `habr.com` присутствует сразу в нескольких источниках. Он будет отмечен VPN в отчёте даже без общего российского правила. Это необходимо оценить при согласовании состава базы; скрытого ручного исключения здесь нет.
-- unavailable-in-russia использует накопительное добавление; удаление ставших доступными ресурсов зависит от сопровождения upstream. Успешная свежая загрузка не означает перепроверку каждого домена.
-- Фильтрация общей платформы может снизить охват, если исходники не перечисляют конкретные заблокированные поддомены. Отчёт явно показывает удалённые условия.
-- База доменная: голосовой UDP, прямые IP и приложения со скрытым именем требуют отдельного рассмотрения. Широкие подсети Google/Cloudflare не добавляются.
-- Direct/VPN в отчёте — решение **только этой базы**. Рабочие VPN, защищённые IP и другие личные исключения остаются на роутере отдельными правилами и здесь не моделируются.
-- Контроль RAM/CPU, реальных маршрутов, DNS, IPv6 и поведения при отказе VPN проводится на следующем разрешённом этапе. Общие правила «Россия → Direct» и «все зарубежные ИИ → VPN» будут удаляться только тогда, когда будет разрешено менять роутер.
-
-## Происхождение данных
-
-- [RunetFreedom: описание ru-blocked-all](https://github.com/runetfreedom/russia-blocked-geosite) и [его сборка исходников](https://github.com/runetfreedom/russia-blocked-geosite/blob/main/.github/workflows/build.yml).
-- [Antifilter](https://antifilter.download/) и [Antifilter community](https://community.antifilter.download/).
+- [Antifilter](https://antifilter.download/list/domains.lst).
+- [Antifilter community](https://community.antifilter.download/list/domains.lst).
 - [Re-filter](https://github.com/1andrevich/Re-filter-lists).
-- [itdog allow-domains](https://github.com/itdoginfo/allow-domains).
-- [hoaxisr/rulesets](https://github.com/hoaxisr/rulesets), [генератор unavailable-in-russia](https://github.com/hoaxisr/rulesets/blob/master/sync_unavailable_in_russia.py).
-- [Public Suffix List](https://publicsuffix.org/), включая ICANN и PRIVATE.
-- [sing-box rule-set](https://sing-box.sagernet.org/configuration/rule-set/).
+- [itdog allow-domains — Russia/inside](https://github.com/itdoginfo/allow-domains).
+- [hoaxisr/rulesets — unavailable-in-russia](https://github.com/hoaxisr/rulesets).
 
-Списки и зависимости принадлежат их авторам; указание источников должно сохраняться при дальнейшем размещении. Не загружайте в репозиторий рабочую папку предыдущего аудита роутера: необходимые файлы проекта перечислены выше, локальные кеши и инструменты исключены через `.gitignore`.
+Дубли и избыточные условия удаляются. Правила для целых доменных зон и выбранных общих платформ фильтруются, а отдельно перечисленные поддомены сохраняются. Основа фильтрации — [Public Suffix List](https://publicsuffix.org/) и [политика проекта](config/policy.json).
+
+В набор не добавляются IP-подсети и общие категории вроде «все ИИ» или «все зарубежные сайты». Наличие конкретного сервиса определяется исходными списками.
+
+## Обновления
+
+GitHub Actions проверяет источники четыре раза в сутки: **03:35, 09:35, 15:35 и 21:35 по Москве**. GitHub может задерживать запуск. Новый релиз появляется при изменении набора или рецепта сборки; постоянный URL остаётся прежним.
+
+Перед публикацией проверяются данные, компиляция, обратное чтение `.srs` и контрольные суммы. Если сборка или загрузка не удалась, предыдущий релиз остаётся доступен. Дату последней проверки источников смотрите в [Actions](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml), а не только в дате релиза.
+
+## Ограничения
+
+- Источники могут содержать устаревшие или ошибочные записи. База не проверяет доступность каждого сайта у вашего провайдера и не гарантирует охват всех блокировок.
+- Набор работает по доменам. Соединения по IP и приложения, скрывающие имя назначения, могут не совпасть с правилами. Настройка DNS выполняется отдельно.
+- На устройствах с небольшим объёмом RAM проверьте расход памяти: размер файла `.srs` не равен размеру набора в памяти.
+
+Нашли ошибку — [откройте issue](https://github.com/Vanilla-SilQ-HD/Routing/issues), указав домен, ожидаемый маршрут и версию набора.
+
+[Сборка, проверка файлов и сопровождение проекта →](docs/BUILD.md)
