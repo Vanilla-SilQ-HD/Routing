@@ -1,0 +1,87 @@
+"""Restore only the manifest of a successful build from this repository/branch.
+
+GitHub read-only APIs only. No publication and no router access.
+"""
+import io
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
+
+from build import BuildError, HTTPSRedirect, write_json
+
+
+class CredentialSafeRedirect(HTTPSRedirect):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+            redirected.remove_header("Authorization")
+        return redirected
+
+
+def get(url, token, as_json=True):
+    if urllib.parse.urlsplit(url).hostname != "api.github.com":
+        raise BuildError("Credentials may only be sent to api.github.com")
+    request = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + token, "User-Agent": "selective-vpn-rules/1",
+        "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+    })
+    opener = urllib.request.build_opener(CredentialSafeRedirect())
+    with opener.open(request, timeout=30) as response:
+        payload = response.read(4 * 1024 * 1024 + 1)
+        if len(payload) > 4 * 1024 * 1024:
+            raise BuildError("Baseline response exceeds size limit")
+    return json.loads(payload) if as_json else payload
+
+
+def read_manifest_zip(payload):
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        members = [m for m in archive.infolist() if m.filename == "manifest.json"]
+        if len(members) != 1 or members[0].file_size > 2 * 1024 * 1024:
+            raise BuildError("Unexpected baseline artifact")
+        return json.loads(archive.read(members[0]))
+
+
+def main():
+    if os.environ.get("RESET_BASELINE", "false").lower() == "true":
+        if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
+            raise BuildError("Baseline reset is allowed only on explicit manual runs")
+        print("Explicit manual baseline reset: candidate will be labelled first-build.")
+        return
+    repository = os.environ["GITHUB_REPOSITORY"]
+    branch = os.environ["BASELINE_BRANCH"]
+    token = os.environ["GITHUB_TOKEN"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise BuildError("Invalid repository name")
+    query = urllib.parse.urlencode({"branch": branch, "status": "success", "per_page": 10})
+    base = f"https://api.github.com/repos/{repository}"
+    runs = get(base + "/actions/workflows/build.yml/runs?" + query, token)["workflow_runs"]
+    runs = [r for r in runs if str(r["id"]) != os.environ.get("GITHUB_RUN_ID") and r["event"] in {"schedule", "push", "workflow_dispatch"}]
+    if not runs:
+        print("No previous successful build on this branch. Bootstrap preview.")
+        return
+    for run in runs:
+        artifacts = get(base + f"/actions/runs/{run['id']}/artifacts?per_page=100", token)["artifacts"]
+        for artifact in artifacts:
+            if artifact["name"] != "rules-manifest" or artifact["expired"]:
+                continue
+            data = read_manifest_zip(get(base + f"/actions/artifacts/{artifact['id']}/zip", token, as_json=False))
+            output = Path("previous/manifest.json")
+            output.parent.mkdir(exist_ok=True)
+            write_json(output, data)
+            print(f"Restored baseline from successful run {run['id']}")
+            return
+    raise BuildError("Previous builds exist but no usable manifest remains; review and explicitly reset the baseline")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (BuildError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
+        print(f"BASELINE FAILED: {exc}", file=sys.stderr)
+        raise SystemExit(1)

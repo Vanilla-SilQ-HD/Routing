@@ -1,0 +1,53 @@
+{
+  "sources": [
+    {
+      "id": "antifilter-full",
+      "url": "https://antifilter.download/list/domains.lst",
+      "format": "suffix-lines",
+      "min_entries": 500000,
+      "max_bytes": 268435456,
+      "description": "Полный доменный источник RunetFreedom ru-blocked-all, до минимизации",
+      "reference": "https://github.com/runetfreedom/russia-blocked-geosite/blob/main/.github/workflows/build.yml"
+    },
+    {
+      "id": "antifilter-community",
+      "url": "https://community.antifilter.download/list/domains.lst",
+      "format": "suffix-lines",
+      "min_entries": 200,
+      "max_bytes": 33554432,
+      "description": "Сообщество Antifilter, исходный список доменов"
+    },
+    {
+      "id": "refilter",
+      "url": "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/refs/heads/main/domains_all.lst",
+      "format": "suffix-lines",
+      "min_entries": 10000,
+      "max_bytes": 33554432,
+      "description": "Третий доменный источник RunetFreedom ru-blocked-all"
+    },
+    {
+      "id": "itdog-inside",
+      "url": "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia/inside-raw.lst",
+      "format": "suffix-lines",
+      "min_entries": 500,
+      "max_bytes": 2097152,
+      "description": "Недоступные из России ресурсы и домены сервисов; без IP-подсетей"
+    },
+    {
+      "id": "unavailable",
+      "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/json/unavailable-in-russia.json",
+      "format": "singbox-domains",
+      "min_entries": 300,
+      "max_bytes": 4194304,
+      "description": "Дополнительные геоограниченные сервисы; точные domain сохраняются точными",
+      "caveat": "Upstream автоматически добавляет домены, но не гарантирует удаление ставших доступными. Это сведения источника, а не проверка доступности."
+    }
+  ],
+  "public_suffix_list": {
+    "id": "public-suffix-list",
+    "url": "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat",
+    "max_bytes": 4194304,
+    "min_entries": 5000,
+    "description": "ICANN и PRIVATE: защита от правил для целых зон и общих платформ"
+  }
+}

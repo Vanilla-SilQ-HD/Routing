@@ -1,0 +1,8 @@
+.venv/
+.tools/
+cache/
+dist/
+previous/
+__pycache__/
+*.pyc
+*.zip

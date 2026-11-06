@@ -1,0 +1,19 @@
+{
+  "note": "Наблюдения, а не исключения и не принудительные маршруты. Новая запись в источнике может законно изменить результат. Итоговый маршрут на роутере также зависит от сохранённых личных исключений.",
+  "domains": [
+    "chatgpt.com", "api.openai.com", "files.oaiusercontent.com", "claude.ai", "api.anthropic.com", "frame.claudeusercontent.com", "bridge.claudeusercontent.com",
+    "gemini.google.com", "generativelanguage.googleapis.com",
+    "www.youtube.com", "i.ytimg.com", "rr1---sn.example.googlevideo.com",
+    "discord.com", "discord.gg", "123456789.discordsays.com", "instagram.com", "facebook.com", "x.com", "canva-apps.com", "notion.site",
+    "chat.deepseek.com", "api.deepseek.com", "chat.qwen.ai", "qwen.ai",
+    "kimi.ai", "kimi.com", "api.moonshot.cn",
+    "ozon.ru", "www.ozon.ru", "yandex.ru", "alice.yandex.ru", "giga.chat",
+    "www.technopark.ru", "habr.com",
+    "store.steampowered.com", "steamcommunity.com", "steamcontent.com", "cdn.steamstatic.com",
+    "fastly.cdn.steampipe.steamcontent.com", "client-update.steamstatic.com",
+    "github.com", "raw.githubusercontent.com", "google.com", "mail.google.com", "drive.google.com", "googleapis.com", "gstatic.com",
+    "fonts.googleapis.com", "fonts.gstatic.com", "maps.googleapis.com",
+    "microsoft.com", "apple.com", "stackoverflow.com", "wikipedia.org", "developer.mozilla.org",
+    "pages.dev", "ordinary-project.pages.dev", "example.ua", "example.ru"
+  ]
+}

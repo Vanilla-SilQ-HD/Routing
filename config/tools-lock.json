@@ -1,0 +1,16 @@
+{
+  "sing_box_version": "1.14.4",
+  "source_format_version": 3,
+  "assets": {
+    "windows-amd64": {
+      "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-windows-amd64.zip",
+      "sha256": "99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df",
+      "member": "sing-box-1.14.4-windows-amd64/sing-box.exe"
+    },
+    "linux-amd64": {
+      "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz",
+      "sha256": "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968",
+      "member": "sing-box-1.14.4-linux-amd64/sing-box"
+    }
+  }
+}
