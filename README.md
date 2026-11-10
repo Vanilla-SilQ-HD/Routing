@@ -15,7 +15,7 @@
 
 ## Подключение к AWG Manager
 
-Требуется **sing-box 1.14+**. В примерах используется подключение `vpn-main`; замените его на своё.
+Требуется **sing-box 1.14+** и существующее VPN-подключение. В JSON используется универсальный tag `vpn`; в интерфейсе AWG Manager выберите своё подключение.
 
 ### 1. Добавьте четыре Remote Rule Set
 
@@ -40,7 +40,7 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 - **Type:** `Remote`;
 - **Format:** `Binary`;
 - **Update interval:** `6h`;
-- **Download detour:** `direct`, если GitHub доступен. Если GitHub заблокирован у провайдера — `vpn-main`.
+- **Download detour:** `direct`, если GitHub доступен. Если GitHub заблокирован у провайдера — `ваш VPN`.
 
 Скачивание через `direct` позволяет загрузить наборы ещё до запуска VPN. При скачивании через VPN обязательно включите кеш и проверьте холодный старт.
 
@@ -51,7 +51,7 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 | Порядок | Условие | Действие |
 | --- | --- | --- |
 | После системных правил | `routing-direct-exceptions` | **Напрямую** |
-| Ниже | `routing`, `routing-services`, `routing-registry-ip` | **vpn-main** |
+| Ниже | `routing`, `routing-services`, `routing-registry-ip` | **ваш VPN** |
 | Final outbound | Всё остальное | **direct** |
 
 Пустой набор `routing-direct-exceptions` безопасен: у него нет совпадений, и он ни на что не влияет.
@@ -62,7 +62,7 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 
 Для **TProxy**:
 
-- создайте DNS-сервер через `vpn-main`;
+- создайте DNS-сервер через `ваш VPN`;
 - добавьте DNS-правило `routing` → этот сервер;
 - остальные DNS-запросы оставьте на прямом сервере;
 - при подмене DNS-ответов используйте пресет **«Анти-подмена»** AWG Manager или повторный резолв через VPN.
@@ -77,9 +77,9 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 
 В **Соединениях** откройте несколько заблокированных и обычных ресурсов и проверьте outbound и сработавшее правило:
 
-- ожидаемый VPN-ресурс → `vpn-main`;
+- ожидаемый VPN-ресурс → `ваш VPN`;
 - `ozon.ru`, `yandex.ru`, `google.com` → `direct`;
-- Telegram и хотя бы один адрес из `blocked-registry-ip.srs` → `vpn-main`;
+- Telegram и хотя бы один адрес из `blocked-registry-ip.srs` → `ваш VPN`;
 - IPv4 и IPv6 — отдельно.
 
 ![Пример готовой конфигурации AWG Manager](docs/assets/awg-manager-example.svg)

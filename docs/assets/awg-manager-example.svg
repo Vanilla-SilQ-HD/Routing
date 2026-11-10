@@ -24,7 +24,7 @@
   <text x="54" y="207" class="mono">4   routing-direct-exceptions</text>
   <text x="650" y="207" class="direct">Direct</text>
   <text x="54" y="247" class="mono">5   routing, routing-services, routing-registry-ip</text>
-  <text x="650" y="247" class="vpn">vpn-main</text>
+  <text x="650" y="247" class="vpn">ваш VPN</text>
   <line x1="40" y1="267" x2="760" y2="267" class="line"/>
   <text x="54" y="299" class="mono">Final outbound</text>
   <text x="650" y="299" class="direct">Direct</text>
