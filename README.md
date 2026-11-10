@@ -2,11 +2,24 @@
 
 [![Сборка и публикация](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg)](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml)
 
-Автообновляемые наборы правил для выборочной маршрутизации в **sing-box**. Помогают направлять заблокированные и недоступные из России ресурсы через VPN, оставляя остальной трафик напрямую.
+Автообновляемые наборы для **sing-box** и **AWG Manager**: заблокированные и недоступные в России ресурсы — через VPN, остальной трафик — напрямую.
 
-**[Домены](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs)** · **[Сети приложений](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs)** · **[Точные IP](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs)** · **[Direct-исключения](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-direct-exceptions.srs)** · [Релизы и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
+[Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
 
-Прямые URL для поля **Source** в AWG Manager:
+## Подключение к AWG Manager
+
+Требуется **sing-box 1.14+**. В примерах используется подключение `vpn-main`; замените его на своё.
+
+### 1. Добавьте четыре Remote Rule Set
+
+| Tag | Назначение |
+| --- | --- |
+| `routing` | Домены недоступных ресурсов |
+| `routing-services` | Проверенные сети приложений, сейчас Telegram |
+| `routing-registry-ip` | Точные IP-адреса из блок-листов |
+| `routing-direct-exceptions` | Приоритетные Direct-исключения |
+
+Прямые URL для поля **Source**:
 
 ```text
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs
@@ -15,9 +28,61 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-regi
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-direct-exceptions.srs
 ```
 
-## Подключение
+Для каждого набора укажите:
 
-Пример для **sing-box 1.14+**. Это фрагмент существующего конфига: `vpn` и `direct` должны совпадать с тегами ваших подключений. URL постоянные и указывают на последний опубликованный релиз.
+- **Type:** `Remote`;
+- **Format:** `Binary`;
+- **Update interval:** `6h`;
+- **Download detour:** `direct`, если GitHub доступен. Если GitHub заблокирован у провайдера — `vpn-main`.
+
+Скачивание через `direct` позволяет загрузить наборы ещё до запуска VPN. При скачивании через VPN обязательно включите кеш и проверьте холодный старт.
+
+### 2. Настройте правила маршрутизации
+
+Правила применяются сверху вниз: **первое совпадение побеждает**. Системные `sniff`, `hijack-dns` и локальные исключения AWG Manager оставьте на своих местах.
+
+| Порядок | Условие | Действие |
+| --- | --- | --- |
+| После системных правил | `routing-direct-exceptions` | **Напрямую** |
+| Ниже | `routing`, `routing-services`, `routing-registry-ip` | **vpn-main** |
+| Final outbound | Всё остальное | **direct** |
+
+Пустой набор `routing-direct-exceptions` безопасен: у него нет совпадений, и он ни на что не влияет.
+
+### 3. Настройте DNS
+
+**В DNS-правилах используйте только `routing`.** Наборы `routing-services` и `routing-registry-ip` содержат IP и в DNS не добавляются.
+
+Для **TProxy**:
+
+- создайте DNS-сервер через `vpn-main`;
+- добавьте DNS-правило `routing` → этот сервер;
+- остальные DNS-запросы оставьте на прямом сервере;
+- при подмене DNS-ответов используйте пресет **«Анти-подмена»** AWG Manager или повторный резолв через VPN.
+
+Для **FakeIP**:
+
+- выберите в FakeIP DNS только набор `routing`, чтобы не гонять через движок лишние запросы;
+- клиенты должны использовать FakeIP DNS роутера;
+- собственный DoH/DoT на устройстве может обойти FakeIP — проверьте такие клиенты отдельно.
+
+### 4. Проверьте результат
+
+В **Соединениях** откройте несколько заблокированных и обычных ресурсов и проверьте outbound и сработавшее правило:
+
+- ожидаемый VPN-ресурс → `vpn-main`;
+- `ozon.ru`, `yandex.ru`, `google.com` → `direct`;
+- Telegram и хотя бы один адрес из `blocked-registry-ip.srs` → `vpn-main`;
+- IPv4 и IPv6 — отдельно.
+
+Подробнее: [документация AWG Manager](https://awgm.hoaxisr.ru/guide/singbox/router/).
+
+## Готовый JSON для sing-box
+
+Это фрагмент существующего конфига. Теги `vpn` и `direct` должны совпадать с вашими outbound. URL постоянные и всегда указывают на последний опубликованный релиз.
+
+<details>
+<summary>Показать JSON</summary>
 
 ```json
 {
@@ -61,7 +126,11 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
     ],
     "rules": [
       { "action": "sniff" },
-      { "rule_set": ["routing-direct-exceptions"], "action": "route", "outbound": "direct" },
+      {
+        "rule_set": ["routing-direct-exceptions"],
+        "action": "route",
+        "outbound": "direct"
+      },
       {
         "rule_set": ["routing", "routing-services", "routing-registry-ip"],
         "action": "route",
@@ -73,69 +142,68 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 }
 ```
 
-Правила применяются сверху вниз, первое совпадение побеждает. Direct-исключения стоят выше VPN, всё непокрытое идёт через `direct`. Свои приоритетные правила размещайте перед этим фрагментом; другие правила VPN в конфиге могут изменить схему.
+</details>
 
-Если GitHub у вашего провайдера доступен, оставьте скачивание через `direct`: так первоначальная загрузка не зависит от уже работающего VPN. Если GitHub недоступен, замените `http_client.detour` на `vpn` у всех наборов. Кеш особенно важен при таком варианте. Проверьте холодный старт без кеша и последующие обновления.
+Если GitHub недоступен напрямую, замените `http_client.detour` на `vpn` у всех наборов. Свои приоритетные исключения размещайте перед VPN-правилом. Другие VPN-правила в конфиге могут изменить итоговый маршрут. Подробнее: [Remote Rule Set в sing-box](https://sing-box.sagernet.org/configuration/rule-set/).
 
-## Настройка в AWG Manager
+## Состав наборов
 
-1. В **Маршрутизация → Sing-box** добавьте четыре Remote Rule Set с тегами и URL из примера, формат `binary`, интервал `6h`. Выберите `direct` для скачивания, если GitHub доступен.
-2. Добавьте правило `routing-direct-exceptions` → **Напрямую**. Ниже добавьте правило с тремя наборами `routing`, `routing-services`, `routing-registry-ip` → ваше VPN-подключение. Не переносите пользовательские правила выше системных `sniff`, `hijack-dns` и локальных исключений.
-3. Проверьте **Final outbound → direct**.
-4. Для **TProxy** настройте DNS-сервер через VPN и правило DNS только для набора `routing`. DNS по умолчанию остаётся прямым. При подмене ответов используйте DNS через VPN или пресет «Анти-подмена» AWG Manager. Наборы IP в DNS-правила не добавляйте.
-5. Для **FakeIP** выберите в DNS только доменный набор `routing`, чтобы уменьшить нагрузку. Клиенты должны использовать FakeIP DNS роутера; собственный DoH/DoT на устройстве может обойти эту схему.
-6. В **Соединениях** проверьте фактический outbound и сработавшее правило для заблокированного и обычного ресурса. Проверьте IPv4 и IPv6 отдельно.
+| Файл | Что содержит |
+| --- | --- |
+| `blocked-domains.srs` | Домены и suffix-правила для маршрутизации и DNS |
+| `blocked-services-ip.srs` | Официальные сети Telegram и маршруты пяти выделенных AS из RIPE RIS |
+| `blocked-registry-ip.srs` | Только публичные IPv4 `/32` и IPv6 `/128` из подключённых блок-листов |
+| `routing-direct-exceptions.srs` | Подтверждённые ложные и устаревшие срабатывания с датой пересмотра |
 
-Подробнее: [удалённые наборы sing-box](https://sing-box.sagernet.org/configuration/rule-set/) и [документация AWG Manager](https://awgm.hoaxisr.ru/guide/singbox/router/).
+### Источники доменов
 
-## Что входит в наборы
+- [Antifilter](https://antifilter.download/list/domains.lst) и [Antifilter community](https://community.antifilter.download/list/domains.lst);
+- [Re-filter](https://github.com/1andrevich/Re-filter-lists);
+- [itdog allow-domains — Russia/inside](https://github.com/itdoginfo/allow-domains);
+- [itdog — отдельный Google AI](https://github.com/itdoginfo/allow-domains/blob/main/Services/google_ai.lst);
+- [hoaxisr/vernette — RKN](https://github.com/hoaxisr/rulesets);
+- зависимости [Bungie, Kinopub, Gemini и TikTok](https://github.com/hoaxisr/rulesets);
+- [unavailable-in-russia](https://github.com/hoaxisr/rulesets).
 
-### `blocked-domains.srs`
+Antifilter full уже включает community и Re-filter: отдельная загрузка нужна для свежих дополнений и происхождения записей, а не для независимого подтверждения. Дубли и условия, покрытые существующим suffix, удаляются без потери покрытия. Целые зоны и общие платформы фильтруются по [Public Suffix List](https://publicsuffix.org/) и [политике проекта](config/policy.json).
 
-Доменная база объединяет:
+### Почему IP добавляются консервативно
 
-- [Antifilter](https://antifilter.download/list/domains.lst).
-- [Antifilter community](https://community.antifilter.download/list/domains.lst).
-- [Re-filter](https://github.com/1andrevich/Re-filter-lists).
-- [itdog allow-domains — Russia/inside](https://github.com/itdoginfo/allow-domains).
-- [itdog — отдельный Google AI](https://github.com/itdoginfo/allow-domains/blob/main/Services/google_ai.lst), намеренно не входящий в Russia/inside.
-- [hoaxisr/vernette — RKN](https://github.com/hoaxisr/rulesets).
-- Отдельные зависимости [Bungie, Kinopub, Gemini и TikTok](https://github.com/hoaxisr/rulesets), найденные сравнением сервисных списков с общей базой.
-- [hoaxisr/rulesets — unavailable-in-russia](https://github.com/hoaxisr/rulesets).
+Один IP может обслуживать множество независимых сайтов. Поэтому проект не преобразует все домены в IP через DNS и не добавляет целиком облачные ASN, CDN, Meta, широкие диапазоны Discord voice и Roblox. Точные registry-IP выделены отдельно, чтобы их можно было отключить или переопределить Direct-правилом.
 
-Antifilter full уже включает Antifilter community и Re-filter: отдельная загрузка нужна для свежих дополнений и учёта происхождения, а не для независимого подтверждения. Дубли и условия, покрытые существующим suffix, удаляются без потери покрытия. Целые доменные зоны и выбранные общие платформы фильтруются по [Public Suffix List](https://publicsuffix.org/) и [политике проекта](config/policy.json); отдельно перечисленные поддомены сохраняются.
+[Подробный разбор IP-источников и ограничений →](docs/IP-COVERAGE.md)
 
-Ручные дополнения находятся в [config/manual-vpn.json](config/manual-vpn.json). Каждое правило требует причину; public suffixes запрещены.
+## Ручные включения и исключения
 
-### `blocked-services-ip.srs`
+- VPN-дополнения: [config/manual-vpn.json](config/manual-vpn.json);
+- Direct-исключения: [config/direct-exceptions.json](config/direct-exceptions.json).
 
-Проверенные сети приложений, которые могут подключаться напрямую к IP. Сейчас это [официальный список Telegram](https://core.telegram.org/resources/cidr.txt) и IPv4/IPv6-маршруты пяти выделенных AS Telegram из RIPE RIS.
-
-Общие сети облачных провайдеров, CDN и Meta, а также широкие составные списки Discord voice и Roblox автоматически не добавляются. Преобразование всех доменов в IP через DNS тоже не используется: один адрес может обслуживать множество независимых ресурсов. [Разбор IP-источников и охвата →](docs/IP-COVERAGE.md)
-
-### `blocked-registry-ip.srs`
-
-Только публичные точные адреса из уже подключённых блок-листов: IPv4 `/32` и IPv6 `/128`. Сети не расширяются до соседних диапазонов. Этот набор отделён от проверенных сервисных сетей, поскольку адрес из реестра может быть общим. Если такой адрес захватывает нужный прямой ресурс, отключите набор у себя или добавьте более приоритетное Direct-правило.
-
-### `routing-direct-exceptions.srs`
-
-Подтверждённые ложные и устаревшие срабатывания. Правила находятся в [config/direct-exceptions.json](config/direct-exceptions.json), имеют причину и дату пересмотра. Набор должен стоять выше общего VPN-правила. Личные исключения в репозиторий не добавляются.
+Для каждого правила нужны `kind`, `domain` и `reason`; для Direct-исключений также `review_after`. Public suffixes запрещены. Личные правила конкретного роутера в общий репозиторий не добавляются.
 
 ## Обновления и проверки
 
-GitHub Actions проверяет источники четыре раза в сутки: **03:35, 09:35, 15:35 и 21:35 по Москве**. GitHub может задерживать запуск. Новый релиз появляется при изменении набора или рецепта сборки; постоянные URL остаются прежними.
+GitHub Actions проверяет источники четыре раза в сутки: **03:35, 09:35, 15:35 и 21:35 по Москве**. Возможны задержки запуска на стороне GitHub.
 
-Перед публикацией выполняются unit-тесты, обязательные ожидания VPN/Direct, компиляция, обратное чтение всех SRS, `sing-box check` и контрольные суммы. `domain-changes.json` показывает добавленные/удалённые условия и отдельно фактически потерянное покрытие после минимизации. Если сборка или загрузка не удалась, предыдущий релиз остаётся доступен.
+Перед публикацией выполняются:
 
-При сбое Telegram/RIPE допускается только полный ранее проверенный сервисный набор не старше 24 часов; частичный IP-набор не публикуется. Доменные источники резервного пропуска не имеют. Дату последней проверки смотрите в [Actions](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml), а не только в дате релиза.
+- unit-тесты и обязательные ожидания VPN/Direct;
+- компиляция и обратное чтение всех SRS;
+- `sing-box check` и проверка контрольных сумм;
+- semantic diff в `domain-changes.json`, включая фактически потерянное покрытие.
+
+Новый релиз появляется при изменении набора или рецепта; постоянные URL остаются прежними. При ошибке обязательного доменного источника предыдущий релиз сохраняется. При сбое Telegram/RIPE допускается только полный проверенный сервисный набор не старше 24 часов, никогда — частичный.
 
 ## Ограничения
 
-- Абсолютно полного списка не существует: блокировки зависят от провайдера и времени, а источники могут содержать устаревшие или ошибочные записи.
-- Доменные правила требуют имени назначения. Клиентский DoH/DoT, ECH и подключения по IP могут его скрыть; DNS и реальные маршруты нужно проверять на своих устройствах.
-- Произвольные адреса собеседников в P2P-звонках и динамические голосовые серверы нельзя полностью описать безопасным статическим списком.
-- На устройствах с небольшим объёмом RAM измерьте расход памяти: размер `.srs` не равен RSS sing-box.
+- Абсолютно полного списка не существует: блокировки зависят от провайдера и времени, а источники могут устаревать или содержать ошибки.
+- Клиентский DoH/DoT, ECH и подключения по IP могут скрыть имя назначения. DNS и реальные маршруты нужно проверять на своих устройствах.
+- P2P-звонки и динамические голосовые серверы нельзя полностью и точно покрыть статическим списком.
+- На устройствах с небольшим объёмом RAM измерьте RSS sing-box: размер `.srs` не равен потреблению памяти.
 
 Нашли ошибку или пропущенный ресурс — [откройте issue](https://github.com/Vanilla-SilQ-HD/Routing/issues), указав домен/IP или приложение, ожидаемый маршрут, сработавшее правило и версию набора.
 
-[Сборка, измерение памяти и сопровождение проекта →](docs/BUILD.md)
+## Документация
+
+- [Сборка, измерение памяти и сопровождение](docs/BUILD.md)
+- [IP-источники и охват](docs/IP-COVERAGE.md)
+- [Последний релиз, manifest и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
