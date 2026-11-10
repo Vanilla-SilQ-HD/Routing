@@ -66,6 +66,7 @@ class ReleaseTests(unittest.TestCase):
         self.commit = "a" * 40
         recipe_files = {"config/tools-lock.json": json_bytes({"sing_box_version": "1.14.4", "source_format_version": 3}),
                         "config/policy.json": json_bytes({"validation": {"max_service_stale_hours": 24}}),
+                        "config/registry-ip-sources.json": json_bytes({"sources": [{"id": "registry"}]}),
                         "scripts/build.py": b"# fixture", "scripts/publish_release.py": b"# fixture",
                         "requirements.txt": b"", ".github/workflows/build.yml": b"# fixture"}
         for name, data in recipe_files.items():
@@ -100,7 +101,8 @@ class ReleaseTests(unittest.TestCase):
                 "compiler": dict(compiler),
             },
             "registry_ip": {
-                "sources": [{"id": "refilter", "ip_addresses": 1}],
+                "sources": [{"id": "refilter", "ip_addresses": 1},
+                            {"id": "registry", "url": "https://example.com/cidr.txt", "exact_prefixes": 1}],
                 "validation": {"baseline": "first-registry-build", "warnings": []},
                 "output": {"total_prefixes": 1, "ipv4_prefixes": 1, "ipv6_prefixes": 0,
                            "prefixes": ["1.1.1.1/32"],
@@ -199,6 +201,12 @@ class ReleaseTests(unittest.TestCase):
                 self.write_manifest()
                 with self.assertRaises(PublishError):
                     verify_candidate(self.candidate, self.root, self.commit)
+
+    def test_registry_source_provenance_is_required(self):
+        self.manifest["registry_ip"]["sources"].pop()
+        self.write_manifest()
+        with self.assertRaisesRegex(PublishError, "provenance"):
+            verify_candidate(self.candidate, self.root, self.commit)
 
     def test_stale_service_fallback_requires_complete_evidence(self):
         validation = self.manifest["service_networks"]["validation"]

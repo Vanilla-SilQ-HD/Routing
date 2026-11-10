@@ -17,6 +17,17 @@ class IssueCandidateTests(unittest.TestCase):
         self.assertIn("202", candidate["review_after"])
         self.assertIn("config/manual-vpn.json", markdown(candidate, issue))
 
+    def test_direct_candidate_uses_the_real_russian_form_fields(self):
+        issue = {"number": 9, "title": "Unrouted: example.com", "html_url": "https://example.com/issues/9",
+                 "body": "### Resource\nexample.com\n\n### Ожидаемый маршрут\nDirect\n\n### Фактический маршрут\nVPN"}
+        candidate = candidate_from_issue(issue)
+        self.assertEqual(candidate["kind"], "domain_suffix")
+        self.assertIn("config/direct-exceptions.json", markdown(candidate, issue))
+        self.assertNotIn("config/manual-vpn.json", markdown(candidate, issue))
+        issue["body"] = issue["body"].replace("### Фактический маршрут\nVPN", "### Фактический маршрут\nDirect")
+        with self.assertRaises(ValueError):
+            candidate_from_issue(issue)
+
     def test_ip_candidate_is_exact(self):
         issue = {"number": 8, "title": "Unrouted IP", "html_url": "https://example.com/issues/8",
                  "body": "### Resource\n1.1.1.1/32"}

@@ -319,7 +319,7 @@ def validate_previous(previous, stats, count, policy, now=None):
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
-def read_manual_rules(path, psl, *, require_review=False):
+def read_manual_rules(path, psl, *, require_review=False, allow_ip=False, now=None):
     data = read_json(path)
     if data.get("schema_version") != 1 or not isinstance(data.get("rules"), list):
         raise BuildError(f"Unexpected manual rule schema: {path.name}")
@@ -333,10 +333,15 @@ def read_manual_rules(path, psl, *, require_review=False):
             raise BuildError(f"Manual rule kind and reason are required in {path.name}")
         if require_review:
             try:
-                dt.date.fromisoformat(item.get("review_after", ""))
+                review_after = dt.date.fromisoformat(item.get("review_after", ""))
             except ValueError as exc:
                 raise BuildError(f"Direct exception review_after must be an ISO date in {path.name}") from exc
+            current_date = now or dt.datetime.now(dt.timezone.utc).date()
+            if review_after < current_date:
+                raise BuildError(f"Direct exception review is overdue: {item['domain']} ({review_after})")
         if kind == "ip_cidr":
+            if not allow_ip:
+                raise BuildError(f"IP rules are supported only for Direct exceptions: {path.name}")
             network = ipaddress.ip_network(item["domain"], strict=True)
             if not network.is_global or network.prefixlen != network.max_prefixlen:
                 raise BuildError(f"Direct IP exceptions must be public exact /32 or /128 addresses: {network}")
@@ -520,7 +525,7 @@ def build(args):
         raise BuildError("Public Suffix List is unexpectedly small")
     manual_exact, manual_suffix, _, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
     direct_exact, direct_suffix, direct_ip_rules, direct_records = read_manual_rules(
-        root / "config/direct-exceptions.json", psl, require_review=True)
+        root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True)
     exact, suffix, exclusions = {}, {}, {}
     core_exact, core_suffix = {}, {}
     core_excluded = set(sources_config.get("core_excluded_sources", []))
@@ -589,13 +594,17 @@ def build(args):
     registry_by_network, registry_cidr_by_network = {}, {}
     registry_source_stats = []
     for i, source in enumerate(registry_config["sources"]):
-        networks, parsed = parse_networks(fetched[source["id"]][0], source)
+        _, parsed = parse_networks(fetched[source["id"]][0], source)
+        exact_count, cidr_count = 0, 0
         for network in map(ipaddress.ip_network, parsed["raw_prefixes"]):
             if network.prefixlen == network.max_prefixlen:
                 registry_by_network[network] = registry_by_network.get(network, 0) | (1 << i)
+                exact_count += 1
             else:
                 registry_cidr_by_network[network] = registry_cidr_by_network.get(network, 0) | (1 << i)
+                cidr_count += 1
         registry_source_stats.append(dict(fetched[source["id"]][1], **parsed,
+                                          exact_prefixes=exact_count, cidr_prefixes=cidr_count,
                                           description=source["description"]))
     registry_networks = exact_networks(registry_by_network)
     registry_cidr_networks = normalize_networks(registry_cidr_by_network)
@@ -750,7 +759,9 @@ def build(args):
             "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
             "service_networks": service_manifest,
             "core": {"output": core_output, "compiler": core_compilation},
-            "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]],
+            "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]]
+                                       + [{key: value for key, value in source.items() if key not in {"prefixes", "raw_prefixes"}}
+                                          for source in registry_source_stats],
                             "output": registry_output, "validation": registry_validation, "compiler": registry_compiler},
             "registry_cidr": {"sources": registry_source_stats, "output": registry_cidr_output,
                               "validation": registry_cidr_validation, "compiler": registry_cidr_compiler},

@@ -154,7 +154,7 @@ class ManualAndDiffTests(unittest.TestCase):
             build.write_json(path, {"schema_version": 1, "rules": [
                 {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "direct resolver", "review_after": "2027-01-01"}
             ]})
-            exact, suffix, networks, records = build.read_manual_rules(path, psl, require_review=True)
+            exact, suffix, networks, records = build.read_manual_rules(path, psl, require_review=True, allow_ip=True)
             self.assertFalse(exact)
             self.assertFalse(suffix)
             self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32"})
@@ -164,7 +164,21 @@ class ManualAndDiffTests(unittest.TestCase):
                     {"kind": "ip_cidr", "domain": value, "reason": "invalid", "review_after": "2027-01-01"}
                 ]})
                 with self.subTest(value=value), self.assertRaises(build.BuildError):
-                    build.read_manual_rules(path, psl, require_review=True)
+                    build.read_manual_rules(path, psl, require_review=True, allow_ip=True)
+
+    def test_ip_is_rejected_for_vpn_and_expired_direct_rules_stop_build(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "manual.json"
+            psl = build.PublicSuffixes("com\n")
+            rule = {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "test", "review_after": "2027-01-01"}
+            build.write_json(path, {"schema_version": 1, "rules": [rule]})
+            with self.assertRaisesRegex(build.BuildError, "only for Direct"):
+                build.read_manual_rules(path, psl)
+            with self.assertRaisesRegex(build.BuildError, "overdue"):
+                build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
+                                        now=dt.date(2027, 1, 2))
+            build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
+                                    now=dt.date(2027, 1, 1))
 
     def test_semantic_diff_distinguishes_minimization_from_lost_coverage(self):
         previous = {"version": 3, "rules": [{"domain": ["same.example", "old.other"],

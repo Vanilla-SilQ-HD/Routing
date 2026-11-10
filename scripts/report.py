@@ -158,8 +158,10 @@ def make_report(manifest, exclusions, probes):
 </section>
 <section id="networks" class="panel">
   <h2>Сервисные сети</h2><p id="service-baseline" class="description"></p><div class="table-wrap"><table><thead><tr><th>Сервис</th><th>IPv4</th><th>IPv6</th><th>Источник</th></tr></thead><tbody id="service-rows"></tbody></table></div>
-  <h2 style="margin-top:24px">Точные registry-IP</h2><p class="description">Отдельный набор: общий адрес из блок-листа не считается доказательно выделенной сетью сервиса.</p><div id="registry-list" class="columns"></div>
-  <h2 style="margin-top:24px">Необязательные широкие CIDR</h2><p class="description">Подключайте только после проверки, чтобы не отправить посторонний трафик через VPN.</p><div id="registry-cidr-list" class="columns"></div>
+  <h2 style="margin-top:24px">Точные registry-IP</h2><p class="description">Отдельный набор: общий адрес из блок-листа не считается доказательно выделенной сетью сервиса. На странице показывается не более 250 записей.</p>
+  <div class="toolbar"><input id="registry-search" type="search" placeholder="Найти IP…"><button type="button" id="registry-prev">Назад</button><button type="button" id="registry-next">Вперёд</button></div><div id="registry-count" class="count"></div><div id="registry-list" class="columns"></div>
+  <h2 style="margin-top:24px">Необязательные широкие CIDR</h2><p class="description">Подключайте только после проверки, чтобы не отправить посторонний трафик через VPN.</p>
+  <div class="toolbar"><input id="registry-cidr-search" type="search" placeholder="Найти CIDR…"><button type="button" id="registry-cidr-prev">Назад</button><button type="button" id="registry-cidr-next">Вперёд</button></div><div id="registry-cidr-count" class="count"></div><div id="registry-cidr-list" class="columns"></div>
   <h2 style="margin-top:24px">Direct-исключения</h2><div id="direct-rules" class="notice"></div>
 </section>
 <section id="validation" class="panel">
@@ -197,8 +199,23 @@ function changeLists(){const groups=C.by_kind||{},added=Object.values(groups).fl
 $('added-search').addEventListener('input',changeLists);$('removed-search').addEventListener('input',changeLists);changeLists();
 $('service-baseline').textContent='Baseline: '+D.services.baseline+'. Общие облачные сети не включаются.';
 $('service-rows').innerHTML=D.services.sources.map(s=>`<tr><td>${esc(s.service)}</td><td>${fmt(s.ipv4)}</td><td>${fmt(s.ipv6)}</td><td class="domain"><a href="${s.url}">${esc(s.url)}</a></td></tr>`).join('');
-$('registry-list').innerHTML=D.registry.prefixes.length?D.registry.prefixes.map(x=>`<code class="download">${esc(x)}</code>`).join(''):'<div class="empty">Нет адресов</div>';
-$('registry-cidr-list').innerHTML=D.registryCidr.prefixes.length?D.registryCidr.prefixes.map(x=>`<code class="download">${esc(x)}</code>`).join(''):'<div class="empty">Нет сетей</div>';
+function paginatedNetwork(key,items,emptyText){
+  const state={page:0},pageSize=250;
+  const render=()=>{
+    const q=$(key+'-search').value.toLowerCase(),rows=items.filter(x=>x.toLowerCase().includes(q));
+    const pages=Math.max(1,Math.ceil(rows.length/pageSize));state.page=Math.max(0,Math.min(state.page,pages-1));
+    const start=state.page*pageSize,visible=rows.slice(start,start+pageSize);
+    $(key+'-count').textContent=rows.length?`Показано ${fmt(start+1)}–${fmt(start+visible.length)} из ${fmt(rows.length)} · страница ${state.page+1} из ${pages}`:emptyText;
+    $(key+'-list').innerHTML=visible.length?visible.map(x=>`<code class="download">${esc(x)}</code>`).join(''):`<div class="empty">${esc(emptyText)}</div>`;
+    $(key+'-prev').disabled=state.page===0;$(key+'-next').disabled=state.page>=pages-1;
+  };
+  $(key+'-search').addEventListener('input',()=>{state.page=0;render()});
+  $(key+'-prev').addEventListener('click',()=>{state.page=Math.max(0,state.page-1);render()});
+  $(key+'-next').addEventListener('click',()=>{state.page+=1;render()});
+  render();
+}
+paginatedNetwork('registry',D.registry.prefixes,'Нет адресов');
+paginatedNetwork('registry-cidr',D.registryCidr.prefixes,'Нет сетей');
 $('direct-rules').innerHTML='Условий: '+fmt(S.directRules)+'. Пустой набор безопасен и не имеет совпадений.'+(D.directRulesList.length?'<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Правило</th><th>Причина</th><th>Пересмотр</th></tr></thead><tbody>'+D.directRulesList.map(x=>`<tr><td class="domain">${esc(x.domain)}</td><td>${esc(x.reason)}</td><td>${esc(x.review_after)}</td></tr>`).join('')+'</tbody></table></div>':'');
 $('baselines').innerHTML=`<table><tbody><tr><td>Доменный baseline</td><td><code>${esc(D.validation.domainBaseline)}</code></td></tr><tr><td>Сервисный baseline</td><td><code>${esc(D.validation.serviceBaseline)}</code></td></tr><tr><td>Registry baseline</td><td><code>${esc(D.validation.registryBaseline)}</code></td></tr><tr><td>Компилятор</td><td><code>${esc(D.validation.compiler.version)}</code></td></tr><tr><td>sing-box check</td><td><span class="badge vpn">${esc(D.validation.compiler.sing_box_check)}</span></td></tr></tbody></table>`;
 $('scope').innerHTML=Object.entries(D.validation.scope).map(([k,v])=>`<div class="download"><code>${esc(k)}</code>: <b>${esc(v)}</b></div>`).join('');

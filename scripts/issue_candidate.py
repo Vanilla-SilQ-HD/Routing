@@ -22,11 +22,25 @@ def sections(body):
     return result
 
 
-def candidate_from_issue(issue):
+def expected_route(issue):
     fields = sections(issue.get("body", ""))
-    resource = fields.get("resource", "").splitlines()[0].strip()
-    if not resource:
+    expected = fields.get("ожидаемый маршрут", fields.get("expected", "")).strip().lower()
+    actual = fields.get("фактический маршрут", fields.get("actual", "")).strip().lower()
+    expected = expected or "vpn"
+    if expected not in {"vpn", "direct"} or actual and actual not in {"vpn", "direct"}:
+        raise ValueError("Expected and actual routes must be VPN or Direct")
+    if actual and expected == actual:
+        raise ValueError("Expected and actual routes must differ")
+    return expected
+
+
+def candidate_from_issue(issue):
+    expected_route(issue)
+    fields = sections(issue.get("body", ""))
+    lines = fields.get("resource", "").splitlines()
+    if not lines or not lines[0].strip():
         raise ValueError("Issue resource is empty")
+    resource = lines[0].strip()
     if re.fullmatch(r"[0-9a-fA-F:.]+/[0-9]+", resource):
         network = ipaddress.ip_network(resource, strict=True)
         if not network.is_global or network.prefixlen != network.max_prefixlen:
@@ -40,7 +54,8 @@ def candidate_from_issue(issue):
 
 
 def markdown(candidate, issue):
-    return (f"Кандидат для `config/manual-vpn.json`. Проверьте ресурс перед публикацией.\n\n"
+    target = "direct-exceptions" if expected_route(issue) == "direct" else "manual-vpn"
+    return (f"Кандидат для `config/{target}.json`. Проверьте ресурс перед публикацией.\n\n"
             f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
             f"Источник: {issue['html_url']}\n")
 

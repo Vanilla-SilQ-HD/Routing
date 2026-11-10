@@ -156,6 +156,12 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     if (registry_cidr.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
             or registry_cidr["validation"].get("warnings") != []):
         raise PublishError("Registry CIDR has an unknown baseline or unresolved validation warnings")
+    registry_config = json.loads((root / "config/registry-ip-sources.json").read_text(encoding="utf-8"))
+    expected_source_ids = {source["id"] for source in registry_config["sources"]}
+    exact_source_ids = {source.get("id") for source in registry.get("sources", [])}
+    cidr_source_ids = {source.get("id") for source in registry_cidr.get("sources", [])}
+    if not expected_source_ids.issubset(exact_source_ids) or cidr_source_ids != expected_source_ids:
+        raise PublishError("Registry IP source provenance is incomplete")
     core = manifest.get("core")
     if (not isinstance(core, dict) or type(core.get("output", {}).get("total_conditions")) is not int
             or core["output"]["total_conditions"] < 1

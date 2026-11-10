@@ -55,6 +55,10 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("<script src=", report)
         self.assertNotIn("x</script><script>", report)
         self.assertIn("x<\\/script>", report)
+        self.assertIn("pageSize=250", report)
+        self.assertIn("paginatedNetwork('registry'", report)
+        self.assertIn("registry-search", report)
+        self.assertNotIn("D.registry.prefixes.map", report)
 
 
 if __name__ == "__main__":

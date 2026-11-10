@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/routing-banner.svg" alt="Routing — точная маршрутизация без лишнего VPN" width="100%">
+  <img src="docs/assets/routing-banner.svg" alt="Routing — недоступное через VPN, остальное напрямую" width="100%">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 
 Пресеты добавляют только VPN-наборы: в AWG Manager одно действие применяется ко всем наборам пресета. После применения Full или Compact отдельно добавьте `routing-direct-exceptions` с действием **Direct** и поставьте это правило выше VPN, как показано ниже.
 
-### 1. Добавьте четыре Remote Rule Set
+### 1. Добавьте четыре основных Remote Rule Set
 
 | Tag | Назначение |
 | --- | --- |
@@ -82,18 +82,20 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 
 ### 3. Настройте DNS
 
-**В DNS-правилах используйте только `routing`.** Наборы `routing-services` и `routing-registry-ip` содержат IP и в DNS не добавляются.
+**Для VPN DNS используйте `routing` или, при выборе Compact, `routing-core`.** Наборы `routing-services` и `routing-registry-ip` содержат IP и в DNS не добавляются. Сейчас `routing-direct-exceptions` содержит только IP, поэтому в DNS он не требуется; если в него добавлены доменные исключения, создайте для него правило в прямой DNS выше VPN-правила.
 
 Для **TProxy**:
 
 - создайте DNS-сервер через `ваш VPN`;
-- добавьте DNS-правило `routing` → этот сервер;
+- добавьте DNS-правило `routing` или `routing-core` → этот сервер;
+- при наличии доменных Direct-исключений добавьте `routing-direct-exceptions` → прямой DNS выше него;
 - остальные DNS-запросы оставьте на прямом сервере;
 - при подмене DNS-ответов используйте пресет **«Анти-подмена»** AWG Manager или повторный резолв через VPN.
 
 Для **FakeIP**:
 
-- выберите в FakeIP DNS только набор `routing`, чтобы не гонять через движок лишние запросы;
+- выберите в FakeIP DNS только `routing` или `routing-core`, чтобы не гонять через движок лишние запросы;
+- доменные Direct-исключения, если они появятся, добавьте в FakeIP DNS и настройте их прямой маршрут выше VPN;
 - клиенты должны использовать FakeIP DNS роутера;
 - собственный DoH/DoT на устройстве может обойти FakeIP — проверьте такие клиенты отдельно.
 

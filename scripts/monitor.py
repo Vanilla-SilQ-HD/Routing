@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import json
 import os
 from pathlib import Path
@@ -84,42 +85,67 @@ def load_previous(url):
         return {"history": []}
 
 
+def summarize_results(target, results):
+    observations = []
+    for result in results:
+        nested = result.get("result", {})
+        observations.append({
+            "status": classify_result(result),
+            "http_status": result.get("statusCode", nested.get("statusCode")),
+            "error": result.get("error", nested.get("error")),
+            "raw_output": str(nested.get("rawOutput", result.get("rawOutput", "")))[:500],
+        })
+    statuses = [item["status"] for item in observations]
+    errors = [str(item["error"])[:300] for item in observations if item["error"]]
+    if len(set(statuses)) > 1:
+        errors.insert(0, "inconsistent probe results")
+    return {
+        "target": target,
+        "status": statuses[0] if len(set(statuses)) == 1 else "unknown",
+        "http_status": next((item["http_status"] for item in observations if item["http_status"] is not None), None),
+        "error": "; ".join(dict.fromkeys(errors)) or None,
+        "raw_output": observations[0]["raw_output"],
+        "probe_statuses": statuses,
+        "observations": observations,
+    }
+
+
 def run_probe(config, target):
     try:
         created = create_measurement(config, target)
         measurement = wait_for_measurement(config, created["id"])
         results = measurement.get("results", [])
         if not results:
-            return {"target": target, "status": "unknown", "http_status": None, "error": "empty result"}
-        result = results[0]
-        nested = result.get("result", {})
-        return {
-            "target": target,
-            "status": classify_result(result),
-            "http_status": result.get("statusCode", nested.get("statusCode")),
-            "error": result.get("error", nested.get("error")),
-            "raw_output": str(nested.get("rawOutput", result.get("rawOutput", "")))[:500],
-        }
-    except (OSError, ValueError, KeyError, TimeoutError, urllib.error.URLError) as exc:
-        return {"target": target, "status": "unknown", "http_status": None, "error": str(exc)[:300]}
+            return {"target": target, "status": "unknown", "http_status": None, "error": "empty result",
+                    "probe_statuses": [], "observations": []}
+        return summarize_results(target, results)
+    except (OSError, ValueError, KeyError, RuntimeError, TimeoutError, urllib.error.URLError) as exc:
+        return {"target": target, "status": "unknown", "http_status": None, "error": str(exc)[:300],
+                "probe_statuses": [], "observations": []}
 
 
 def html_report(data):
+    def esc(value):
+        return html.escape(str(value), quote=True)
+
     latest = data["history"][-1]["results"] if data["history"] else []
     rows = "".join(
-        f"<tr><td>{item['target']}</td><td><span class='status {item['status']}'>{item['status']}</span></td>"
-        f"<td>{item.get('http_status') or '—'}</td><td>{item.get('error') or '—'}</td></tr>"
+        f"<tr><td>{esc(item['target'])}</td><td><span class='status {esc(item['status'])}'>{esc(item['status'])}</span></td>"
+        f"<td>{esc(item.get('http_status') or '—')}</td>"
+        f"<td>{esc(', '.join(item.get('probe_statuses', [])) or '—')}</td>"
+        f"<td>{esc(item.get('error') or '—')}</td></tr>"
         for item in latest
-    ) or "<tr><td colspan='4'>Измерений пока нет</td></tr>"
+    ) or "<tr><td colspan='5'>Измерений пока нет</td></tr>"
     points = "".join(
-        f"<tr><td>{run['generated_at']}</td><td>{', '.join(sorted({item['status'] for item in run['results']}))}</td></tr>"
+        f"<tr><td>{esc(run['generated_at'])}</td>"
+        f"<td>{esc(', '.join(sorted({item['status'] for item in run['results']})))}</td></tr>"
         for run in reversed(data["history"][-14:])
     )
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Routing · Мониторинг</title>
 <style>body{{max-width:1200px;margin:32px auto;padding:0 20px;background:#08111f;color:#e7f0fc;font:15px/1.55 system-ui}}h1{{letter-spacing:2px}}p{{color:#93a9c4}}table{{width:100%;border-collapse:collapse;background:#101c2e;margin:20px 0}}td,th{{padding:11px;border:1px solid #293c56;text-align:left;vertical-align:top}}th{{background:#172740}}a{{color:#70b7ff}}.status{{font-weight:700}}.works_direct{{color:#45d7a5}}.blocked_or_geo{{color:#ffca75}}.down_or_error{{color:#ff8b98}}.unknown{{color:#93a9c4}}.notice{{padding:14px;border-left:3px solid #70b7ff;background:#10233a}}</style></head><body>
 <h1>ROUTING · Мониторинг</h1><p>Внешняя проверка небольшой контрольной выборки через Globalping. Результаты не меняют маршруты автоматически и не доказывают наличие блокировки у конкретного провайдера.</p>
 <div class="notice">Проверка через ваш VPN не выполняется: для неё нужна отдельная точка выхода. Статусы показывают только внешние HTTP-ответы.</div>
-<h2>Последняя выборка</h2><table><thead><tr><th>Домен</th><th>Статус</th><th>HTTP</th><th>Примечание</th></tr></thead><tbody>{rows}</tbody></table>
+<h2>Последняя выборка</h2><table><thead><tr><th>Домен</th><th>Статус</th><th>HTTP</th><th>Точки</th><th>Примечание</th></tr></thead><tbody>{rows}</tbody></table>
 <h2>История запусков</h2><table><thead><tr><th>Время UTC</th><th>Статусы</th></tr></thead><tbody>{points}</tbody></table>
 <p><a href="monitoring.json">Машинный monitoring.json</a> · <a href="index.html">Routing Dashboard</a></p>
 </body></html>"""
