@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="790" viewBox="0 0 1200 790" role="img" aria-labelledby="title desc">
+  <title id="title">Пример настройки AWG Manager</title>
+  <desc id="desc">Четыре набора правил, Direct-исключения выше VPN и два правила DNS.</desc>
+  <defs>
+    <style>
+      .bg{fill:#0a1220}.card{fill:#111c2e;stroke:#273a54;stroke-width:1}.head{fill:#17263b}
+      .title{font:600 22px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#edf4ff}
+      .section{font:600 16px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#dce8f8}
+      .text{font:400 14px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#a9bdd6}
+      .mono{font:400 13px ui-monospace,SFMono-Regular,Consolas,monospace;fill:#bfd0e5}
+      .vpn{font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#75e6bb}
+      .direct{font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#8bc3ff}
+      .line{stroke:#273a54}.tag{fill:#1a2c44}.green{fill:#12372f}.blue{fill:#152e4b}
+    </style>
+  </defs>
+  <rect width="1200" height="790" rx="22" class="bg"/>
+  <text x="28" y="42" class="title">AWG Manager · пример готовой конфигурации</text>
+  <rect x="24" y="62" width="752" height="298" rx="14" class="card"/>
+  <text x="44" y="94" class="section">Routing rules · first match wins</text>
+  <rect x="40" y="110" width="720" height="34" rx="7" class="head"/>
+  <text x="54" y="132" class="mono">#   Условие                                             Outbound</text>
+  <text x="54" y="165" class="mono">0   sniff / hijack-dns / private                       system</text>
+  <line x1="40" y1="181" x2="760" y2="181" class="line"/>
+  <text x="54" y="207" class="mono">4   routing-direct-exceptions</text>
+  <text x="650" y="207" class="direct">Direct</text>
+  <text x="54" y="247" class="mono">5   routing, routing-services, routing-registry-ip</text>
+  <text x="650" y="247" class="vpn">vpn-main</text>
+  <line x1="40" y1="267" x2="760" y2="267" class="line"/>
+  <text x="54" y="299" class="mono">Final outbound</text>
+  <text x="650" y="299" class="direct">Direct</text>
+  <text x="44" y="337" class="text">Системные правила сохранены, пользовательские Direct-исключения выше VPN.</text>
+  <rect x="798" y="62" width="378" height="298" rx="14" class="card"/>
+  <text x="818" y="94" class="section">DNS</text>
+  <text x="818" y="127" class="text">Default DNS</text>
+  <text x="1070" y="127" class="direct">dns-direct</text>
+  <rect x="814" y="146" width="346" height="62" rx="9" class="tag"/>
+  <text x="830" y="171" class="mono">routing-direct-exceptions</text>
+  <text x="830" y="193" class="direct">→ dns-direct</text>
+  <rect x="814" y="220" width="346" height="62" rx="9" class="tag"/>
+  <text x="830" y="245" class="mono">routing</text>
+  <text x="830" y="267" class="vpn">→ dns-vpn</text>
+  <text x="818" y="319" class="text">IP-наборы в DNS не используются.</text>
+  <text x="818" y="341" class="text">DoH Direct: 1.1.1.1 · DoH VPN: 8.8.8.8</text>
+  <rect x="24" y="380" width="1152" height="382" rx="14" class="card"/>
+  <text x="44" y="414" class="section">Remote Rule Sets · Binary · обновление каждые 6 часов</text>
+  <g>
+    <rect x="40" y="432" width="1120" height="64" rx="9" class="tag"/>
+    <text x="56" y="458" class="mono">routing</text>
+    <text x="56" y="480" class="text">blocked-domains.srs · домены для маршрутизации и DNS</text>
+    <rect x="40" y="508" width="1120" height="64" rx="9" class="tag"/>
+    <text x="56" y="534" class="mono">routing-services</text>
+    <text x="56" y="556" class="text">blocked-services-ip.srs · проверенные сети Telegram</text>
+    <rect x="40" y="584" width="1120" height="64" rx="9" class="tag"/>
+    <text x="56" y="610" class="mono">routing-registry-ip</text>
+    <text x="56" y="632" class="text">blocked-registry-ip.srs · точные /32 и /128 из блок-листов</text>
+    <rect x="40" y="660" width="1120" height="64" rx="9" class="tag"/>
+    <text x="56" y="686" class="mono">routing-direct-exceptions</text>
+    <text x="56" y="708" class="text">routing-direct-exceptions.srs · приоритетные исключения</text>
+  </g>
+  <circle cx="46" cy="746" r="5" fill="#34d399"/>
+  <text x="60" y="751" class="text">Все наборы загружены · final: direct · IPv4 и IPv6 проверяются отдельно</text>
+</svg>

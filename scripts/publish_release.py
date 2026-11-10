@@ -3,7 +3,6 @@
 Only GitHub Releases APIs are used. No router access or third-party actions.
 """
 import argparse
-import gzip
 import hashlib
 import json
 import os
@@ -14,6 +13,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 
 class PublishError(Exception):
@@ -23,10 +23,13 @@ class PublishError(Exception):
 DATASETS = ("blocked-domains", "blocked-services-ip", "blocked-registry-ip", "routing-direct-exceptions")
 BUILD_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".json", ".txt")}
 BUILD_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
-                "manual-rules.json", "report.html"}
-RELEASE_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".srs.sha256", ".json.gz")}
-RELEASE_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
-                  "manual-rules.json", "report.html", "release.json", "SHA256SUMS"}
+                "manual-rules.json", "report.html", "status.json", "updated.json"}
+RELEASE_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".srs.sha256")}
+RELEASE_FILES |= {"manifest.json", "domain-changes.json", "release.json", "SHA256SUMS",
+                  "routing-evidence.zip"}
+EVIDENCE_FILES = [name + ".json" for name in DATASETS]
+EVIDENCE_FILES += ["excluded.json", "probes.json", "domain-changes.json", "manual-rules.json",
+                   "report.html", "status.json", "updated.json"]
 MAX_ASSET_BYTES = 128 * 1024 * 1024
 
 
@@ -164,16 +167,19 @@ def fingerprint(manifest):
 
 def prepare_assets(candidate, destination, manifest, repository, run_id, attempt):
     destination.mkdir(parents=True, exist_ok=False)
-    for name in ("manifest.json", "excluded.json", "probes.json", "domain-changes.json", "manual-rules.json", "report.html"):
+    for name in ("manifest.json", "domain-changes.json"):
         shutil.copyfile(candidate / name, destination / name)
     for name in DATASETS:
         shutil.copyfile(candidate / (name + ".srs"), destination / (name + ".srs"))
-        with (candidate / (name + ".json")).open("rb") as source:
-            with (destination / (name + ".json.gz")).open("wb") as target:
-                with gzip.GzipFile(filename="", mode="wb", fileobj=target, mtime=0) as compressed:
-                    shutil.copyfileobj(source, compressed)
         digest = manifest["output"]["files"][name + ".srs"]
         (destination / (name + ".srs.sha256")).write_bytes(f"{digest}  {name}.srs\n".encode("ascii"))
+    with zipfile.ZipFile(destination / "routing-evidence.zip", "w",
+                         compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name in EVIDENCE_FILES:
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o600 << 16
+            archive.writestr(info, (candidate / name).read_bytes())
     digest = manifest["output"]["files"]["blocked-domains.srs"]
     metadata = {"schema_version": 1, "fingerprint": fingerprint(manifest), "srs_sha256": digest,
                 "service_srs_sha256": manifest["output"]["files"]["blocked-services-ip.srs"],
@@ -246,6 +252,81 @@ class GitHub:
                             json_bytes({"draft": False, "prerelease": False, "make_latest": "true"}))
 
 
+def human_size(value):
+    if value < 1024:
+        return f"{value} Б"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} КБ"
+    return f"{value / 1024 / 1024:.2f} МБ"
+
+
+def make_release_body(manifest, metadata, repository):
+    owner, project = repository.split("/", 1)
+    output = manifest["output"]
+    service = manifest["service_networks"]["output"]
+    registry = manifest["registry_ip"]["output"]
+    direct = manifest["direct_exceptions"]["output"]
+    changes = manifest["domain_diff"]
+    labels = {
+        "blocked-domains": ("Домены", "Маршрутизация и DNS", output["srs_bytes"]),
+        "blocked-services-ip": ("Сети приложений", "Проверенные сети Telegram", service["srs_bytes"]),
+        "blocked-registry-ip": ("Точные IP", "Подключения напрямую к IP", registry["srs_bytes"]),
+        "routing-direct-exceptions": ("Direct-исключения", "Приоритетные правила Direct", direct["srs_bytes"]),
+    }
+    rows = []
+    base = f"https://github.com/{repository}/releases/latest/download/"
+    for name, (title, purpose, size) in labels.items():
+        digest = metadata["dataset_srs_sha256"][name]
+        rows.append(f"| [{title}]({base}{name}.srs) | {purpose} | {human_size(size)} | `{digest[:12]}…` |")
+    pages = f"https://{owner.lower()}.github.io/{project}/"
+    return f"""Выборочная маршрутизация: недоступные ресурсы через VPN, остальное напрямую.
+
+## Результат сборки
+
+| Показатель | Значение |
+| --- | ---: |
+| Доменных условий | **{output['total_conditions']:,}** |
+| Точные имена / suffix | {output['exact']:,} / {output['suffix']:,} |
+| Сети Telegram | **{service['total_prefixes']}** |
+| Registry IP | **{registry['total_prefixes']}** |
+| Direct-исключения | **{direct['total_conditions']}** |
+| Источники | **{len(manifest['sources'])}** |
+| sing-box | `{manifest['compiler']['version']}` |
+
+## Скачать
+
+| Набор | Назначение | Размер | SHA-256 |
+| --- | --- | ---: | --- |
+{chr(10).join(rows)}
+
+Постоянные URL ведут на этот и последующие релизы. Для DNS используйте только доменный набор.
+
+## Изменения покрытия
+
+| Добавлено | Удалено | Новое покрытие | Потерянное покрытие |
+| ---: | ---: | ---: | ---: |
+| {changes['added']:,} | {changes['removed']:,} | **{changes['effective_added']:,}** | **{changes['effective_removed']:,}** |
+
+Полный semantic diff: [domain-changes.json]({base}domain-changes.json). Источники и происхождение записей: [manifest.json]({base}manifest.json).
+
+## Проверки
+
+- unit-тесты и обязательные ожидания VPN/Direct;
+- compile/decompile всех SRS и `sing-box check`;
+- semantic diff без скрытой потери покрытия;
+- SHA-256 и повторное скачивание каждого вложения;
+- только точные `/32` и `/128` в registry-IP.
+
+## Подключение и отчёты
+
+- [Инструкция для AWG Manager](https://github.com/{repository}#подключение-к-awg-manager)
+- [Интерактивный Routing Dashboard]({pages})
+- [Evidence ZIP: исходники, probes и отчёт]({base}routing-evidence.zip)
+- [SHA256SUMS]({base}SHA256SUMS)
+- [Проверенный workflow]({metadata['run_url']})
+"""
+
+
 def publish(assets, manifest, metadata, github, tag):
     if {p.name for p in assets.iterdir()} != RELEASE_FILES:
         raise PublishError("Unexpected release inventory")
@@ -267,23 +348,7 @@ def publish(assets, manifest, metadata, github, tag):
                             or checksum != (assets / (name + ".srs.sha256")).read_bytes()):
                         raise PublishError(f"Unchanged release failed binary integrity verification: {name}")
                 return {"status": "unchanged", "release_url": latest["html_url"], "tag": latest["tag_name"]}
-    stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-domains.srs"
-    service_stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-services-ip.srs"
-    registry_stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-registry-ip.srs"
-    direct_stable = f"https://github.com/{github.repository}/releases/latest/download/routing-direct-exceptions.srs"
-    body = (f"Автоматические наборы для выборочного VPN: домены, сервисные сети, точные IP и Direct-исключения.\n\n"
-            f"Доменных условий: **{manifest['output']['total_conditions']:,}**; "
-            f"IP-префиксов сервисов: **{manifest['service_networks']['output']['total_prefixes']:,}**; "
-            f"точных IP из блок-листов: **{manifest['registry_ip']['output']['total_prefixes']:,}**. "
-            f"sing-box: `{manifest['compiler']['version']}`.\n\n"
-            f"[Домены]({stable}) · [Сети приложений]({service_stable}) · [Точные IP]({registry_stable}) · "
-            f"[Direct-исключения]({direct_stable}) · [Проверенная сборка]({metadata['run_url']})\n\n"
-            f"SHA-256 доменов: `{metadata['srs_sha256']}`\n\n"
-            f"SHA-256 IP-сетей: `{metadata['service_srs_sha256']}`\n\n"
-            "Исходники всех наборов опубликованы в `.json.gz`; происхождение и проверки — в `manifest.json`, "
-            "доменные добавления и удаления — в `domain-changes.json`. Контрольные суммы — в `SHA256SUMS`.\n\n"
-            "Direct-исключения ставятся выше VPN-правила; три VPN-набора используются в маршрутизации. "
-            "Для DNS-правил используйте только доменный набор. Маршруты и DNS задаются в конфигурации sing-box.")
+    body = make_release_body(manifest, metadata, github.repository)
     release = github.create_draft(tag, manifest["environment"]["github_commit"],
                                   "Routing · " + manifest["built_at"], body)
     if release.get("draft") is not True:

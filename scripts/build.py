@@ -6,7 +6,6 @@ import collections
 import concurrent.futures
 import datetime as dt
 import hashlib
-import html
 import ipaddress
 import json
 import os
@@ -22,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 import idna
+from report import make_report
 from service_networks import normalize_networks, prepare_services, restore_services
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -451,43 +451,6 @@ def compile_and_verify(directory, executable, source_format_version, basename="b
             "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False}
 
 
-def make_report(manifest, exclusions, probes):
-    e = html.escape
-    def table(headings, rows):
-        return "<table><thead><tr>" + "".join(f"<th>{e(str(x))}</th>" for x in headings) + "</tr></thead><tbody>" + "".join("<tr>" + "".join(f"<td>{e(str(x))}</td>" for x in row) + "</tr>" for row in rows) + "</tbody></table>"
-    source_table = table(["Источник", "Доменных условий", "Точных IP", "Неверных записей", "SHA-256"],
-                         [[s["id"], f"{s['unique_conditions']:,}", s["ip_addresses"], s["invalid"], s["sha256"]]
-                          for s in manifest["sources"]])
-    probe_table = table(["Домен", "База", "После исключений", "Ожидание", "Условие", "Источники"],
-                        [[p["domain"], p["base_decision"], p["final_decision"], p.get("expected") or "—",
-                          p.get("matched_rule") or "—", ", ".join(p["sources"])] for p in probes])
-    excluded_table = table(["Условие", "Причина", "Источники"],
-                           [[x["domain"], x["reason"], ", ".join(x["sources"])] for x in exclusions])
-    out = manifest["output"]
-    services = manifest["service_networks"]
-    registry = manifest["registry_ip"]
-    direct = manifest["direct_exceptions"]
-    service_table = table(["Сервис", "Источник", "IPv4-сетей", "IPv6-сетей", "SHA-256"],
-                          [[s["service"], s["url"], s["ipv4_prefixes"], s["ipv6_prefixes"], s["sha256"]]
-                           for s in services["sources"]])
-    return f'''<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Проверка автоматической VPN-базы</title><style>body{{font:16px/1.55 system-ui,sans-serif;background:#f6f8fb;color:#152137;max-width:1200px;margin:32px auto;padding:0 24px}}h1,h2{{line-height:1.2}}table{{border-collapse:collapse;width:100%;background:white;margin:20px 0}}td,th{{padding:10px 12px;border:1px solid #dce3ed;text-align:left;overflow-wrap:anywhere}}th{{background:#e9eff8}}.box{{background:#e6f1ff;border-left:4px solid #3971ce;padding:16px}}code{{background:#e9eff8;padding:2px 4px}}small{{color:#506078}}</style>
-<h1>Автоматическая база для выборочного VPN</h1><p>Сборка: {e(manifest['built_at'])}. Все времена UTC.</p>
-<p class="box"><b>Четыре набора для sing-box.</b> blocked-domains.srs — домены для маршрутизации и DNS; blocked-services-ip.srs — проверенные сети приложений; blocked-registry-ip.srs — только точные /32 и /128 из блок-листов; routing-direct-exceptions.srs — приоритетные Direct-исключения. IP-наборы не используются в DNS. Итог зависит от порядка правил.</p>
-<h2>Результат</h2><p>{out['total_conditions']:,} доменных условий: {out['suffix']:,} суффиксов и {out['exact']:,} точных имён. SRS: {out['srs_bytes']:,} байт. Удалено широких условий: {len(exclusions)}. Избыточных условий: {manifest['counts']['redundant_conditions_removed']:,}.</p>
-<p>По сравнению с предыдущим доменным набором: <b>+{manifest['domain_diff']['added']} / −{manifest['domain_diff']['removed']}</b>. Подробности и выборки — в domain-changes.json. Ручные правила снабжены причинами; Direct-исключения также имеют дату пересмотра.</p>
-<h2>Источники</h2>{source_table}<p>Дата получения не доказывает актуальность каждой блокировки. Некоторые источники пересекаются и используются для дополнения и происхождения записей, а не как независимые подтверждения. Полные URL, времена, хеши и классификация неверных записей — в manifest.json.</p>
-<h2>Сети приложений</h2><p>{services['output']['total_prefixes']} сетей; SRS: {services['output']['srs_bytes']} байт. Текущий baseline: {e(services['validation']['baseline'])}. Общие облачные сети и адреса из DNS-ответов не добавляются.</p>{service_table}
-<h2>Точные IP из блок-листов</h2><p>{registry['output']['total_prefixes']} адресов: IPv4 {registry['output']['ipv4_prefixes']}, IPv6 {registry['output']['ipv6_prefixes']}. Это отдельный набор, потому что адрес может использоваться несколькими ресурсами. Он не смешан с проверенными сетями Telegram.</p>
-<h2>Direct-исключения</h2><p>{direct['output']['total_conditions']} условий. В AWG Manager набор routing-direct-exceptions.srs должен быть выше общих VPN-правил.</p>
-<h2>Проверка доменов</h2><p>База — совпадение до исключений; После исключений — итоговый проектный маршрут. Expectation с заданным значением является обязательной регрессионной проверкой и останавливает сборку при несовпадении. Это не сетевой тест доступности и не чтение конфигурации роутера.</p>{probe_table}
-<h2>Удалённые широкие условия</h2><p>Удаление родительского условия не удаляет отдельно перечисленные поддомены. PSL включает ICANN и PRIVATE. Явные ручные правила для общей инфраструктуры допускаются только с причиной; public suffixes запрещены и там.</p>{excluded_table}
-<h2>Валидация</h2><p>Компиляция всех SRS, обратное декодирование со сравнением условий, sing-box check: выполнены. Сетевой сервис не запускался. Семантический diff дополняет контроль резкого изменения размера.</p>
-<p>Ошибка обязательного доменного источника останавливает сборку. При сбое сервисного источника допускается только полный ранее проверенный набор не старше настроенного срока; частичный IP-набор не выпускается. Доменный baseline: {e(manifest['validation']['baseline'])}.</p>
-<h2>Границы результата</h2><p>Источники могут содержать ошибочные и устаревшие записи. Фильтрация общей платформы может оставить непокрытые зависимости. Доменные правила не гарантируют охват соединений по IP, P2P или со скрытым именем сайта. Память, DNS, IPv6 и реальные маршруты необходимо проверять на устройстве.</p>
-</html>'''
-
-
 def build(args):
     started = time.monotonic()
     root = Path(args.root).resolve()
@@ -689,9 +652,14 @@ def build(args):
             "prefixes": [str(n) for n in registry_networks],
             "srs_bytes": (stage / "blocked-registry-ip.srs").stat().st_size,
         }
+        built_at = utc_now()
+        write_json(stage / "status.json", {"schemaVersion": 1, "label": "domains",
+                                           "message": f"{count:,}".replace(",", " "), "color": "brightgreen"})
+        write_json(stage / "updated.json", {"schemaVersion": 1, "label": "updated",
+                                            "message": built_at.replace("T", " "), "color": "blue"})
         output_files = [path.name for path in stage.iterdir() if path.is_file()]
         manifest = {
-            "schema_version": 1, "built_at": utc_now(), "offline_replay": args.offline,
+            "schema_version": 1, "built_at": built_at, "offline_replay": args.offline,
             "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
             "service_networks": service_manifest,
             "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]],
@@ -703,8 +671,11 @@ def build(args):
             "domain_diff": {"added": domain_diff["total_added"], "removed": domain_diff["total_removed"],
                             "effective_added": domain_diff["effective_added"],
                             "effective_removed": domain_diff["effective_removed"]},
+            "domain_changes": domain_diff,
             "configuration_sha256": config_hashes, "compiler": compilation,
-            "environment": {"python": sys.version.split()[0], "idna": idna.__version__, "github_commit": os.environ.get("GITHUB_SHA")},
+            "environment": {"python": sys.version.split()[0], "idna": idna.__version__,
+                            "github_commit": os.environ.get("GITHUB_SHA"),
+                            "repository": os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")},
             "counts": {"source_unique_conditions_sum": total_conditions, "filtered_source_conditions_sum": skipped,
                        "unique_filtered_conditions": before_minimize,
                        "duplicate_conditions_across_sources": total_conditions - skipped - before_minimize,

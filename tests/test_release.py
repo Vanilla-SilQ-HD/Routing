@@ -1,5 +1,4 @@
 import copy
-import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -7,9 +6,10 @@ import sys
 import tempfile
 import unittest
 import urllib.request
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from publish_release import (BUILD_FILES, DATASETS, RELEASE_FILES, CredentialSafeRedirect, PublishError,
+from publish_release import (BUILD_FILES, DATASETS, EVIDENCE_FILES, RELEASE_FILES, CredentialSafeRedirect, PublishError,
                              fingerprint, initial_baseline_allowed, json_bytes, parse_checksums, prepare_assets, publish,
                              sha256, verify_candidate)
 from build import validate_previous
@@ -81,14 +81,16 @@ class ReleaseTests(unittest.TestCase):
             "environment": {"github_commit": self.commit},
             "configuration_sha256": {name: sha256(self.root / name) for name in recipe_files},
             "compiler": dict(compiler),
+            "sources": [],
             "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
                       "ip_rules_included": True, "registry_ip_rules_included": True,
                       "direct_exceptions_included": True, "dns_configuration_included": False},
-            "output": {"total_conditions": 3, "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
+            "output": {"total_conditions": 3, "exact": 1, "suffix": 2,
+                       "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
                        "files": {name: sha256(self.candidate / name) for name in BUILD_FILES - {"manifest.json", "report.html"}}},
             "validation": {"baseline": "previous-successful-or-approved-manifest", "warnings": []},
-            "domain_diff": {"added": 0, "removed": 0},
+            "domain_diff": {"added": 0, "removed": 0, "effective_added": 0, "effective_removed": 0},
             "service_networks": {
                 "sources": [{"id": "telegram", "url": "https://core.telegram.org/resources/cidr.txt"}],
                 "validation": {"baseline": "first-service-build", "warnings": []},
@@ -253,10 +255,12 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(all(sha256(self.assets / name) == digest for name, digest in checksums.items()))
         second = self.root / "second-release"
         prepare_assets(self.candidate, second, self.manifest, "owner/Routing", "124", "1")
-        for name in ("blocked-domains", "blocked-services-ip"):
-            with gzip.open(self.assets / (name + ".json.gz"), "rb") as source:
-                self.assertEqual(source.read(), (self.candidate / (name + ".json")).read_bytes())
-            self.assertEqual(sha256(self.assets / (name + ".json.gz")), sha256(second / (name + ".json.gz")))
+        with zipfile.ZipFile(self.assets / "routing-evidence.zip") as archive:
+            self.assertEqual(archive.namelist(), EVIDENCE_FILES)
+            for name in EVIDENCE_FILES:
+                self.assertEqual(archive.read(name), (self.candidate / name).read_bytes())
+                self.assertEqual(archive.getinfo(name).date_time, (1980, 1, 1, 0, 0, 0))
+        self.assertEqual(sha256(self.assets / "routing-evidence.zip"), sha256(second / "routing-evidence.zip"))
 
     def test_fingerprint_ignores_time_but_tracks_binary_and_recipe(self):
         changed = copy.deepcopy(self.manifest)
@@ -312,7 +316,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(github.events[-1], "publish")
         self.assertEqual(sum(e.startswith("download:") for e in github.events), len(RELEASE_FILES))
         self.assertIn("blocked-services-ip.srs", github.body)
-        self.assertIn("Для DNS-правил используйте только доменный набор", github.body)
+        self.assertIn("Для DNS используйте только доменный набор", github.body)
 
     def test_upload_or_verification_failure_keeps_previous_release(self):
         for failure in ("fail_upload", "corrupt_download"):
@@ -352,7 +356,7 @@ class ReleaseTests(unittest.TestCase):
             self.publish_to(github)
 
     def test_incomplete_unchanged_release_does_not_silently_pass(self):
-        for name in ("report.html", "blocked-services-ip.srs", "blocked-services-ip.srs.sha256"):
+        for name in ("routing-evidence.zip", "blocked-services-ip.srs", "blocked-services-ip.srs.sha256"):
             with self.subTest(name=name):
                 github = FakeGitHub()
                 self.publish_to(github)

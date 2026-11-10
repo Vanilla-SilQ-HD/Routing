@@ -68,5 +68,25 @@ class BaselineArtifactTests(unittest.TestCase):
                 os.chdir(previous_cwd)
 
 
+    def test_previous_rules_are_restored_from_evidence_zip(self):
+        rules = b'{"version":3,"rules":[{"domain":["example.com"]}]}\n'
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr("blocked-domains.json", rules)
+        payload = stream.getvalue()
+        latest = {"tag_name": "rules-2-1", "assets": [{"id": 8, "name": "routing-evidence.zip"}]}
+        def fake_get(url, token, as_json=True, limit=0, octet_stream=False):
+            return latest if as_json else payload
+        with tempfile.TemporaryDirectory() as temporary:
+            previous_cwd = os.getcwd()
+            try:
+                os.chdir(temporary)
+                with patch("load_baseline.get", side_effect=fake_get):
+                    restore_latest_rules("https://api.github.com/repos/owner/Routing", "token")
+                self.assertEqual(Path("previous/blocked-domains.json").read_bytes(), rules)
+            finally:
+                os.chdir(previous_cwd)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,13 +57,22 @@ def restore_latest_rules(base, token):
             return
         raise
     assets = {asset["name"]: asset for asset in latest.get("assets", [])}
-    asset = assets.get("blocked-domains.json.gz")
+    legacy = assets.get("blocked-domains.json.gz")
+    evidence = assets.get("routing-evidence.zip")
+    asset = legacy or evidence
     if asset is None:
         return
     payload = get(base + f"/releases/assets/{int(asset['id'])}", token,
                   as_json=False, limit=128 * 1024 * 1024, octet_stream=True)
-    with gzip.GzipFile(fileobj=io.BytesIO(payload)) as compressed:
-        rules = compressed.read(512 * 1024 * 1024 + 1)
+    if legacy:
+        with gzip.GzipFile(fileobj=io.BytesIO(payload)) as compressed:
+            rules = compressed.read(512 * 1024 * 1024 + 1)
+    else:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            info = archive.getinfo("blocked-domains.json")
+            if info.file_size > 512 * 1024 * 1024:
+                raise BuildError("Previous domain rules exceed size limit")
+            rules = archive.read(info)
     if len(rules) > 512 * 1024 * 1024:
         raise BuildError("Previous domain rules exceed size limit")
     output = Path("previous/blocked-domains.json")

@@ -1,10 +1,17 @@
-# Routing
+<p align="center">
+  <img src="docs/assets/routing-banner.svg" alt="Routing — точная маршрутизация без лишнего VPN" width="100%">
+</p>
 
-[![Сборка и публикация](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg)](https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml)
+<p align="center">
+  <a href="https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml"><img src="https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg" alt="Сборка"></a>
+  <a href="https://vanilla-silq-hd.github.io/Routing/"><img src="https://img.shields.io/endpoint?url=https://vanilla-silq-hd.github.io/Routing/status.json" alt="Доменных условий"></a>
+  <a href="https://vanilla-silq-hd.github.io/Routing/"><img src="https://img.shields.io/endpoint?url=https://vanilla-silq-hd.github.io/Routing/updated.json" alt="Обновлено"></a>
+  <img src="https://img.shields.io/badge/sing--box-1.14.4-546e7a" alt="sing-box 1.14.4">
+</p>
 
 Автообновляемые наборы для **sing-box** и **AWG Manager**: заблокированные и недоступные в России ресурсы — через VPN, остальной трафик — напрямую.
 
-[Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
+[Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/)
 
 ## Подключение к AWG Manager
 
@@ -74,6 +81,8 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 - `ozon.ru`, `yandex.ru`, `google.com` → `direct`;
 - Telegram и хотя бы один адрес из `blocked-registry-ip.srs` → `vpn-main`;
 - IPv4 и IPv6 — отдельно.
+
+![Пример готовой конфигурации AWG Manager](docs/assets/awg-manager-example.svg)
 
 Подробнее: [документация AWG Manager](https://awgm.hoaxisr.ru/guide/singbox/router/).
 
@@ -192,6 +201,8 @@ GitHub Actions проверяет источники четыре раза в с
 - semantic diff в `domain-changes.json`, включая фактически потерянное покрытие.
 
 Новый релиз появляется при изменении набора или рецепта; постоянные URL остаются прежними. При ошибке обязательного доменного источника предыдущий релиз сохраняется. При сбое Telegram/RIPE допускается только полный проверенный сервисный набор не старше 24 часов, никогда — частичный.
+
+[Интерактивный Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/) показывает источники, маршруты probes, изменения покрытия и результаты проверок. Исходники правил и диагностические файлы дополнительно собираются в `routing-evidence.zip`.
 
 ## Ограничения
 
