@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from build import BuildError
-from load_baseline import CredentialSafeRedirect, read_manifest_zip, restore_latest_rules
+from load_baseline import CredentialSafeRedirect, get, read_manifest_zip, restore_latest_rules
 
 
 class BaselineArtifactTests(unittest.TestCase):
@@ -38,6 +38,14 @@ class BaselineArtifactTests(unittest.TestCase):
         with self.assertRaises(BuildError):
             handler.redirect_request(request, None, 302, "Found", {}, "http://storage.example/file")
 
+
+    def test_binary_download_uses_octet_stream_accept_header(self):
+        with patch("load_baseline.urllib.request.build_opener") as factory:
+            response = factory.return_value.open.return_value.__enter__.return_value
+            response.read.return_value = b"{}"
+            get("https://api.github.com/repos/owner/Routing/releases/assets/7", "token", as_json=False)
+            request = factory.return_value.open.call_args.args[0]
+        self.assertEqual(request.get_header("Accept"), "application/octet-stream")
 
     def test_previous_rules_are_restored_from_the_latest_release(self):
         rules = b'{"version":3,"rules":[{"domain":["example.com"]}]}\n'

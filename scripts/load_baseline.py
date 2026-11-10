@@ -30,7 +30,8 @@ def get(url, token, as_json=True, limit=4 * 1024 * 1024):
         raise BuildError("Credentials may only be sent to api.github.com")
     request = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + token, "User-Agent": "selective-vpn-rules/1",
-        "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
+        "Accept": "application/vnd.github+json" if as_json else "application/octet-stream",
+        "X-GitHub-Api-Version": "2022-11-28",
     })
     opener = urllib.request.build_opener(CredentialSafeRedirect())
     with opener.open(request, timeout=120) as response:
