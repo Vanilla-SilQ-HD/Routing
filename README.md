@@ -6,6 +6,15 @@
 
 **[Домены](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs)** · **[Сети приложений](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs)** · **[Точные IP](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs)** · **[Direct-исключения](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-direct-exceptions.srs)** · [Релизы и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
 
+Прямые URL для поля **Source** в AWG Manager:
+
+```text
+https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs
+https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs
+https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs
+https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-direct-exceptions.srs
+```
+
 ## Подключение
 
 Пример для **sing-box 1.14+**. Это фрагмент существующего конфига: `vpn` и `direct` должны совпадать с тегами ваших подключений. URL постоянные и указывают на последний опубликованный релиз.
