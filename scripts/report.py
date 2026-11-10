@@ -5,9 +5,11 @@ import json
 
 
 DATASETS = (
-    ("blocked-domains", "Домены", "Маршрутизация и DNS"),
+    ("blocked-domains", "Домены · Full", "Полная база для маршрутизации и DNS"),
+    ("blocked-domains-core", "Домены · Compact", "Компактная база для слабых устройств"),
     ("blocked-services-ip", "Сети приложений", "Проверенные сети Telegram"),
     ("blocked-registry-ip", "Точные IP", "Только /32 и /128 из блок-листов"),
+    ("blocked-registry-ip-cidr", "Широкие CIDR", "Необязательное дополнение с предупреждением"),
     ("routing-direct-exceptions", "Direct-исключения", "Приоритетные правила Direct"),
 )
 
@@ -21,6 +23,14 @@ def make_report(manifest, exclusions, probes):
     registry = manifest["registry_ip"]
     direct = manifest["direct_exceptions"]
     changes = manifest["domain_diff"]
+    dataset_sizes = {
+        "blocked-domains": output["srs_bytes"],
+        "blocked-domains-core": manifest["core"]["output"]["srs_bytes"],
+        "blocked-services-ip": services["output"]["srs_bytes"],
+        "blocked-registry-ip": registry["output"]["srs_bytes"],
+        "blocked-registry-ip-cidr": manifest["registry_cidr"]["output"]["srs_bytes"],
+        "routing-direct-exceptions": direct["output"]["srs_bytes"],
+    }
     data = {
         "meta": {
             "repository": repository,
@@ -35,6 +45,8 @@ def make_report(manifest, exclusions, probes):
             "exact": output["exact"],
             "suffix": output["suffix"],
             "srsBytes": output["srs_bytes"],
+            "coreDomains": manifest["core"]["output"]["total_conditions"],
+            "registryCidrPrefixes": manifest["registry_cidr"]["output"]["total_prefixes"],
             "sources": len(manifest["sources"]),
             "servicePrefixes": services["output"]["total_prefixes"],
             "registryPrefixes": registry["output"]["total_prefixes"],
@@ -52,10 +64,7 @@ def make_report(manifest, exclusions, probes):
                 "url": release_base + name + ".srs",
                 "shaUrl": release_base + name + ".srs.sha256",
                 "sha256": output["files"][name + ".srs"],
-                "bytes": (output["srs_bytes"] if name == "blocked-domains" else
-                          services["output"]["srs_bytes"] if name == "blocked-services-ip" else
-                          registry["output"]["srs_bytes"] if name == "blocked-registry-ip" else
-                          direct["output"]["srs_bytes"]),
+                "bytes": dataset_sizes[name],
             }
             for name, title, description in DATASETS
         ],
@@ -87,6 +96,8 @@ def make_report(manifest, exclusions, probes):
             ],
         },
         "registry": registry["output"],
+        "registryCidr": manifest["registry_cidr"]["output"],
+        "directRulesList": manifest["direct_exceptions"].get("rules", []),
         "validation": {
             "domainBaseline": manifest["validation"]["baseline"],
             "serviceBaseline": services["validation"]["baseline"],
@@ -112,7 +123,7 @@ def make_report(manifest, exclusions, probes):
 <div class="wrap">
 <header class="top">
   <div class="brand"><div class="mark">R</div><div><h1>ROUTING</h1><p>Интерактивный отчёт выборочной маршрутизации</p></div></div>
-  <div class="meta"><div id="built"></div><div id="commit"></div><div style="margin-top:7px"><a id="release" target="_blank" rel="noopener">Релиз</a><a id="actions" target="_blank" rel="noopener">Actions</a><a id="repository" target="_blank" rel="noopener">Репозиторий</a></div></div>
+  <div class="meta"><div id="built"></div><div id="commit"></div><div style="margin-top:7px"><a id="release" target="_blank" rel="noopener">Релиз</a><a id="actions" target="_blank" rel="noopener">Actions</a><a id="repository" target="_blank" rel="noopener">Репозиторий</a><a href="monitoring.html">Мониторинг</a></div></div>
 </header>
 <section id="cards" class="grid cards"></section>
 <nav class="tabs" aria-label="Разделы отчёта">
@@ -148,10 +159,11 @@ def make_report(manifest, exclusions, probes):
 <section id="networks" class="panel">
   <h2>Сервисные сети</h2><p id="service-baseline" class="description"></p><div class="table-wrap"><table><thead><tr><th>Сервис</th><th>IPv4</th><th>IPv6</th><th>Источник</th></tr></thead><tbody id="service-rows"></tbody></table></div>
   <h2 style="margin-top:24px">Точные registry-IP</h2><p class="description">Отдельный набор: общий адрес из блок-листа не считается доказательно выделенной сетью сервиса.</p><div id="registry-list" class="columns"></div>
+  <h2 style="margin-top:24px">Необязательные широкие CIDR</h2><p class="description">Подключайте только после проверки, чтобы не отправить посторонний трафик через VPN.</p><div id="registry-cidr-list" class="columns"></div>
   <h2 style="margin-top:24px">Direct-исключения</h2><div id="direct-rules" class="notice"></div>
 </section>
 <section id="validation" class="panel">
-  <h2>Результаты проверок</h2><p class="description">Все четыре SRS проходят одинаковый путь валидации перед публикацией.</p>
+  <h2>Результаты проверок</h2><p class="description">Все SRS проходят одинаковый путь валидации перед публикацией.</p>
   <div class="checks"><div class="check">Unit-тесты и обязательные probes</div><div class="check">Compile / decompile всех SRS</div><div class="check">sing-box check</div><div class="check">SHA-256 и повторное скачивание</div><div class="check">Semantic diff без скрытой потери покрытия</div><div class="check">Только /32 и /128 в registry-IP</div></div>
   <div id="baselines" style="margin-top:18px" class="table-wrap"></div>
   <h3 style="margin-top:22px">Область сборки</h3><div id="scope"></div>
@@ -170,7 +182,7 @@ const empty=(text,colspan=1)=>`<tr><td colspan="${colspan}" class="empty">${esc(
 $('built').textContent='Сборка: '+new Date(D.meta.builtAt).toLocaleString('ru-RU',{timeZone:'UTC'})+' UTC';
 $('commit').textContent=D.meta.commit?'Commit: '+D.meta.commit:'Локальная сборка';
 $('release').href=D.meta.releaseUrl;$('actions').href=D.meta.runUrl;$('repository').href='https://github.com/'+D.meta.repository;
-const cards=[['Доменных условий',fmt(S.domains),fmt(S.exact)+' exact · '+fmt(S.suffix)+' suffix'],['Источников',fmt(S.sources),'автообновление 4 раза в сутки'],['Сети приложений',fmt(S.servicePrefixes),'проверенные сети Telegram'],['Точные IP',fmt(S.registryPrefixes),'отдельный registry-набор'],['Direct-исключения',fmt(S.directRules),'приоритет над VPN'],['Размер доменного SRS',bytes(S.srsBytes),'двоичный rule-set']];
+const cards=[['Доменных условий',fmt(S.domains),fmt(S.exact)+' exact · '+fmt(S.suffix)+' suffix'],['Compact-доменов',fmt(S.coreDomains),'компактный профиль'],['Источников',fmt(S.sources),'автообновление 4 раза в сутки'],['Сети приложений',fmt(S.servicePrefixes),'проверенные сети Telegram'],['Точные IP',fmt(S.registryPrefixes),'отдельный registry-набор'],['Широкие CIDR',fmt(S.registryCidrPrefixes),'необязательное дополнение'],['Direct-исключения',fmt(S.directRules),'приоритет над VPN'],['Размер доменного SRS',bytes(S.srsBytes),'двоичный rule-set']];
 $('cards').innerHTML=cards.map(([l,v,h])=>`<div class="card"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${h}</div></div>`).join('');
 $('downloads').innerHTML=D.downloads.map(x=>`<article class="download"><h3>${esc(x.title)}</h3><p>${esc(x.description)} · ${bytes(x.bytes)}</p><div class="links"><a href="${x.url}">Скачать SRS</a><a href="${x.shaUrl}">SHA-256</a></div><div class="hash">${esc(x.sha256)}</div></article>`).join('');
 function probes(){const q=$('probe-search').value.toLowerCase(),f=$('probe-filter').value;const rows=D.probes.filter(p=>(!f||p.final_decision===f)&&(!q||[p.domain,p.matched_rule,(p.sources||[]).join(' ')].join(' ').toLowerCase().includes(q)));$('probe-count').textContent=`Показано ${fmt(rows.length)} из ${fmt(D.probes.length)}`;$('probe-rows').innerHTML=rows.length?rows.map(p=>`<tr><td class="domain">${esc(p.domain)}</td><td>${badge(p.base_decision)}</td><td>${badge(p.final_decision)}</td><td>${badge(p.expected)}</td><td class="domain">${esc(p.matched_rule||'—')}</td><td>${esc((p.sources||[]).join(', ')||'—')}</td></tr>`).join(''):empty('Ничего не найдено',6)}
@@ -186,7 +198,8 @@ $('added-search').addEventListener('input',changeLists);$('removed-search').addE
 $('service-baseline').textContent='Baseline: '+D.services.baseline+'. Общие облачные сети не включаются.';
 $('service-rows').innerHTML=D.services.sources.map(s=>`<tr><td>${esc(s.service)}</td><td>${fmt(s.ipv4)}</td><td>${fmt(s.ipv6)}</td><td class="domain"><a href="${s.url}">${esc(s.url)}</a></td></tr>`).join('');
 $('registry-list').innerHTML=D.registry.prefixes.length?D.registry.prefixes.map(x=>`<code class="download">${esc(x)}</code>`).join(''):'<div class="empty">Нет адресов</div>';
-$('direct-rules').textContent='Условий: '+fmt(S.directRules)+'. Пустой набор безопасен и не имеет совпадений.';
+$('registry-cidr-list').innerHTML=D.registryCidr.prefixes.length?D.registryCidr.prefixes.map(x=>`<code class="download">${esc(x)}</code>`).join(''):'<div class="empty">Нет сетей</div>';
+$('direct-rules').innerHTML='Условий: '+fmt(S.directRules)+'. Пустой набор безопасен и не имеет совпадений.'+(D.directRulesList.length?'<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Правило</th><th>Причина</th><th>Пересмотр</th></tr></thead><tbody>'+D.directRulesList.map(x=>`<tr><td class="domain">${esc(x.domain)}</td><td>${esc(x.reason)}</td><td>${esc(x.review_after)}</td></tr>`).join('')+'</tbody></table></div>':'');
 $('baselines').innerHTML=`<table><tbody><tr><td>Доменный baseline</td><td><code>${esc(D.validation.domainBaseline)}</code></td></tr><tr><td>Сервисный baseline</td><td><code>${esc(D.validation.serviceBaseline)}</code></td></tr><tr><td>Registry baseline</td><td><code>${esc(D.validation.registryBaseline)}</code></td></tr><tr><td>Компилятор</td><td><code>${esc(D.validation.compiler.version)}</code></td></tr><tr><td>sing-box check</td><td><span class="badge vpn">${esc(D.validation.compiler.sing_box_check)}</span></td></tr></tbody></table>`;
 $('scope').innerHTML=Object.entries(D.validation.scope).map(([k,v])=>`<div class="download"><code>${esc(k)}</code>: <b>${esc(v)}</b></div>`).join('');
 document.querySelectorAll('.tabs button').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('.tabs button,.panel').forEach(x=>x.classList.remove('active'));button.classList.add('active');$(button.dataset.tab).classList.add('active');history.replaceState(null,'','#'+button.dataset.tab)}));

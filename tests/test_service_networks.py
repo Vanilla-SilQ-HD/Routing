@@ -49,6 +49,7 @@ class ServiceNetworkTests(unittest.TestCase):
         networks, stats = self.parse()
         self.assertEqual(stats["unique_conditions"], 14)
         self.assertEqual(stats["total_prefixes"], 11)
+        self.assertEqual(len(stats["raw_prefixes"]), 14)
         for value in ["149.154.167.41", "91.108.8.1", "2001:b28:f23d::1", "2a0a:f280::1"]:
             ip = ipaddress.ip_address(value)
             self.assertTrue(any(ip in n for n in networks if ip.version == n.version), value)

@@ -107,6 +107,20 @@ class ReleaseTests(unittest.TestCase):
                            "srs_bytes": (self.candidate / "blocked-registry-ip.srs").stat().st_size},
                 "compiler": dict(compiler),
             },
+            "core": {
+                "output": {"total_conditions": 2, "exact": 1, "suffix": 1,
+                           "source_ids": ["fixture"],
+                           "srs_bytes": (self.candidate / "blocked-domains-core.srs").stat().st_size},
+                "compiler": dict(compiler),
+            },
+            "registry_cidr": {
+                "sources": [{"id": "registry", "url": "https://example.com/cidr.txt"}],
+                "validation": {"baseline": "first-registry-build", "warnings": []},
+                "output": {"total_prefixes": 1, "ipv4_prefixes": 1, "ipv6_prefixes": 0,
+                           "prefixes": ["198.51.100.0/24"],
+                           "srs_bytes": (self.candidate / "blocked-registry-ip-cidr.srs").stat().st_size},
+                "compiler": dict(compiler),
+            },
             "direct_exceptions": {
                 "rules": [],
                 "output": {"total_conditions": 0,

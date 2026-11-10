@@ -93,6 +93,7 @@
       "caveat": "Upstream автоматически добавляет домены, но не гарантирует удаление ставших доступными. Это сведения источника, а не проверка доступности."
     }
   ],
+  "core_excluded_sources": ["antifilter-full", "rkn"],
   "public_suffix_list": {
     "id": "public-suffix-list",
     "url": "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat",

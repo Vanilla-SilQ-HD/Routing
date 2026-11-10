@@ -20,16 +20,17 @@ class PublishError(Exception):
     pass
 
 
-DATASETS = ("blocked-domains", "blocked-services-ip", "blocked-registry-ip", "routing-direct-exceptions")
+DATASETS = ("blocked-domains", "blocked-domains-core", "blocked-services-ip",
+            "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions")
 BUILD_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".json", ".txt")}
 BUILD_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
-                "manual-rules.json", "report.html", "status.json", "updated.json"}
+                "manual-rules.json", "report.html", "status.json", "updated.json", "catalog.json", "presets.user.json"}
 RELEASE_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".srs.sha256")}
 RELEASE_FILES |= {"manifest.json", "domain-changes.json", "release.json", "SHA256SUMS",
-                  "routing-evidence.zip"}
+                  "routing-evidence.zip", "catalog.json"}
 EVIDENCE_FILES = [name + ".json" for name in DATASETS]
 EVIDENCE_FILES += ["excluded.json", "probes.json", "domain-changes.json", "manual-rules.json",
-                   "report.html", "status.json", "updated.json"]
+                   "report.html", "status.json", "updated.json", "presets.user.json"]
 MAX_ASSET_BYTES = 128 * 1024 * 1024
 
 
@@ -141,6 +142,26 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     if (registry.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
             or registry["validation"].get("warnings") != []):
         raise PublishError("Registry IP has an unknown baseline or unresolved validation warnings")
+    registry_cidr = manifest.get("registry_cidr")
+    if not isinstance(registry_cidr, dict):
+        raise PublishError("Registry CIDR evidence is missing")
+    cidr_output = registry_cidr.get("output", {})
+    if (any(type(cidr_output.get(key)) is not int for key in ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "srs_bytes"))
+            or cidr_output["total_prefixes"] < 1
+            or cidr_output["total_prefixes"] != cidr_output["ipv4_prefixes"] + cidr_output["ipv6_prefixes"]
+            or len(cidr_output.get("prefixes", [])) != cidr_output["total_prefixes"]
+            or cidr_output["srs_bytes"] != (directory / "blocked-registry-ip-cidr.srs").stat().st_size):
+        raise PublishError("Unexpected registry CIDR counts or binary size")
+    verify_compiler(registry_cidr.get("compiler"), lock)
+    if (registry_cidr.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
+            or registry_cidr["validation"].get("warnings") != []):
+        raise PublishError("Registry CIDR has an unknown baseline or unresolved validation warnings")
+    core = manifest.get("core")
+    if (not isinstance(core, dict) or type(core.get("output", {}).get("total_conditions")) is not int
+            or core["output"]["total_conditions"] < 1
+            or core["output"].get("srs_bytes") != (directory / "blocked-domains-core.srs").stat().st_size):
+        raise PublishError("Unexpected compact domain output")
+    verify_compiler(core.get("compiler"), lock)
     direct = manifest.get("direct_exceptions")
     if (not isinstance(direct, dict) or type(direct.get("output", {}).get("total_conditions")) is not int
             or direct["output"]["total_conditions"] < 0
@@ -167,7 +188,7 @@ def fingerprint(manifest):
 
 def prepare_assets(candidate, destination, manifest, repository, run_id, attempt):
     destination.mkdir(parents=True, exist_ok=False)
-    for name in ("manifest.json", "domain-changes.json"):
+    for name in ("manifest.json", "domain-changes.json", "catalog.json"):
         shutil.copyfile(candidate / name, destination / name)
     for name in DATASETS:
         shutil.copyfile(candidate / (name + ".srs"), destination / (name + ".srs"))
@@ -263,14 +284,18 @@ def human_size(value):
 def make_release_body(manifest, metadata, repository):
     owner, project = repository.split("/", 1)
     output = manifest["output"]
+    core = manifest["core"]["output"]
     service = manifest["service_networks"]["output"]
     registry = manifest["registry_ip"]["output"]
+    registry_cidr = manifest["registry_cidr"]["output"]
     direct = manifest["direct_exceptions"]["output"]
     changes = manifest["domain_diff"]
     labels = {
-        "blocked-domains": ("Домены", "Маршрутизация и DNS", output["srs_bytes"]),
+        "blocked-domains": ("Домены · Full", "Маршрутизация и DNS", output["srs_bytes"]),
+        "blocked-domains-core": ("Домены · Compact", "Компактная база для слабых устройств", core["srs_bytes"]),
         "blocked-services-ip": ("Сети приложений", "Проверенные сети Telegram", service["srs_bytes"]),
         "blocked-registry-ip": ("Точные IP", "Подключения напрямую к IP", registry["srs_bytes"]),
+        "blocked-registry-ip-cidr": ("Широкие CIDR", "Необязательное дополнение с предупреждением", registry_cidr["srs_bytes"]),
         "routing-direct-exceptions": ("Direct-исключения", "Приоритетные правила Direct", direct["srs_bytes"]),
     }
     rows = []
@@ -285,10 +310,12 @@ def make_release_body(manifest, metadata, repository):
 
 | Показатель | Значение |
 | --- | ---: |
-| Доменных условий | **{output['total_conditions']:,}** |
+| Доменных условий · Full | **{output['total_conditions']:,}** |
+| Доменных условий · Compact | **{core['total_conditions']:,}** |
 | Точные имена / suffix | {output['exact']:,} / {output['suffix']:,} |
 | Сети Telegram | **{service['total_prefixes']}** |
 | Registry IP | **{registry['total_prefixes']}** |
+| Широкие CIDR (необязательно) | **{registry_cidr['total_prefixes']}** |
 | Direct-исключения | **{direct['total_conditions']}** |
 | Источники | **{len(manifest['sources'])}** |
 | sing-box | `{manifest['compiler']['version']}` |
@@ -321,6 +348,7 @@ def make_release_body(manifest, metadata, repository):
 
 - [Инструкция для AWG Manager](https://github.com/{repository}#подключение-к-awg-manager)
 - [Интерактивный Routing Dashboard]({pages})
+- [AWG Manager Catalog]({base}catalog.json)
 - [Evidence ZIP: исходники, probes и отчёт]({base}routing-evidence.zip)
 - [SHA256SUMS]({base}SHA256SUMS)
 - [Проверенный workflow]({metadata['run_url']})

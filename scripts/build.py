@@ -22,7 +22,7 @@ import urllib.request
 
 import idna
 from report import make_report
-from service_networks import normalize_networks, prepare_services, restore_services
+from service_networks import normalize_networks, parse_networks, prepare_services, restore_services
 
 ROOT = Path(__file__).resolve().parents[1]
 USER_AGENT = "Routing/2 (public routing data only)"
@@ -323,12 +323,12 @@ def read_manual_rules(path, psl, *, require_review=False):
     data = read_json(path)
     if data.get("schema_version") != 1 or not isinstance(data.get("rules"), list):
         raise BuildError(f"Unexpected manual rule schema: {path.name}")
-    exact, suffix, records = {}, {}, []
+    exact, suffix, ip_rules, records = {}, {}, [], []
     for item in data["rules"]:
         if not isinstance(item, dict) or set(item) - {"kind", "domain", "reason", "review_after"}:
             raise BuildError(f"Unexpected manual rule fields in {path.name}")
         kind = item.get("kind")
-        if (kind not in {"domain", "domain_suffix"} or not isinstance(item.get("reason"), str)
+        if (kind not in {"domain", "domain_suffix", "ip_cidr"} or not isinstance(item.get("reason"), str)
                 or not item["reason"].strip()):
             raise BuildError(f"Manual rule kind and reason are required in {path.name}")
         if require_review:
@@ -336,6 +336,15 @@ def read_manual_rules(path, psl, *, require_review=False):
                 dt.date.fromisoformat(item.get("review_after", ""))
             except ValueError as exc:
                 raise BuildError(f"Direct exception review_after must be an ISO date in {path.name}") from exc
+        if kind == "ip_cidr":
+            network = ipaddress.ip_network(item["domain"], strict=True)
+            if not network.is_global or network.prefixlen != network.max_prefixlen:
+                raise BuildError(f"Direct IP exceptions must be public exact /32 or /128 addresses: {network}")
+            if network in ip_rules:
+                raise BuildError(f"Duplicate manual rule: {network}")
+            ip_rules.append(network)
+            records.append({**item, "kind": kind, "domain": str(network)})
+            continue
         name = normalize_domain(item.get("domain"))
         if kind == "domain_suffix" and psl.is_broad_routing_suffix(name):
             raise BuildError(f"Manual public-suffix rule is forbidden: {name}")
@@ -344,7 +353,7 @@ def read_manual_rules(path, psl, *, require_review=False):
             raise BuildError(f"Duplicate manual rule: {name}")
         target[name] = dict(item)
         records.append({**item, "kind": kind, "domain": name})
-    return exact, suffix, records
+    return exact, suffix, ip_rules, records
 
 
 def domain_groups(data):
@@ -369,7 +378,7 @@ def make_domain_diff(previous_rules, exact, suffix, original_exact, original_suf
     else:
         previous = domain_groups(previous_rules)
         baseline = "previous-successful-or-approved-manifest"
-    changes = {"baseline": baseline, "sample_limit": limit, "by_kind": {}}
+    changes = {"baseline": baseline, "observed_at": utc_now(), "sample_limit": limit, "by_kind": {}}
     for kind in ("domain", "domain_suffix"):
         added = sorted(current[kind] - previous[kind])
         removed = sorted(previous[kind] - current[kind])
@@ -401,9 +410,13 @@ def make_domain_diff(previous_rules, exact, suffix, original_exact, original_suf
     return changes
 
 
-def validate_registry(previous, networks, policy, now=None):
+def exact_networks(networks):
+    return sorted(set(networks), key=lambda n: (n.version, int(n.network_address), n.prefixlen))
+
+
+def validate_registry(previous, networks, policy, now=None, section="registry_ip"):
     current = {str(network) for network in networks}
-    registry = previous.get("registry_ip") if previous else None
+    registry = previous.get(section) if previous else None
     if not registry:
         return {"baseline": "first-registry-build", "warnings": []}
     old = set(registry["output"]["prefixes"])
@@ -429,12 +442,17 @@ def compile_and_verify(directory, executable, source_format_version, basename="b
                     raise BuildError("Compiler roundtrip introduced a non-CIDR or empty condition")
                 networks.extend(ipaddress.ip_network(n, strict=True) for n in rule["ip_cidr"])
             return normalize_networks(networks)
-        groups = {"domain": set(), "domain_suffix": set()}
+        groups = {"domain": set(), "domain_suffix": set(), "ip_cidr": set()}
         for rule in data.get("rules", []):
             if set(rule) - groups.keys():
                 raise BuildError("Compiler roundtrip introduced a non-domain condition")
             for kind, values in rule.items():
-                groups[kind].update(values)
+                if isinstance(values, str):
+                    values = [values]
+                if kind == "ip_cidr":
+                    groups[kind].update(normalize_networks(ipaddress.ip_network(n, strict=True) for n in values))
+                else:
+                    groups[kind].update(values)
         return groups
     if conditions(original) != conditions(result):
         raise BuildError("SRS compile/decompile changed the routing conditions")
@@ -456,13 +474,15 @@ def build(args):
     root = Path(args.root).resolve()
     sources_config = read_json(root / "config/sources.json")
     service_config = read_json(root / "config/service-networks.json")
+    registry_config = read_json(root / "config/registry-ip-sources.json")
     policy = read_json(root / "config/policy.json")
     previous = read_json(args.previous) if args.previous else None
     sources = sources_config["sources"]
     psl_source = sources_config["public_suffix_list"]
     domain_inputs = sources + [psl_source]
+    registry_inputs = registry_config["sources"]
     service_inputs = service_config["sources"] + [s["identity_source"] for s in service_config["sources"] if "identity_source" in s]
-    all_sources = domain_inputs + service_inputs
+    all_sources = domain_inputs + registry_inputs + service_inputs
     if len({s["id"] for s in all_sources}) != len(all_sources):
         raise BuildError("Duplicate input source ID")
     cache = root / "cache/sources"
@@ -495,10 +515,12 @@ def build(args):
     psl = PublicSuffixes(fetched[psl_source["id"]][0].read_text(encoding="utf-8-sig"))
     if psl.count < psl_source["min_entries"]:
         raise BuildError("Public Suffix List is unexpectedly small")
-    manual_exact, manual_suffix, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
-    direct_exact, direct_suffix, direct_records = read_manual_rules(
+    manual_exact, manual_suffix, _, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
+    direct_exact, direct_suffix, direct_ip_rules, direct_records = read_manual_rules(
         root / "config/direct-exceptions.json", psl, require_review=True)
     exact, suffix, exclusions = {}, {}, {}
+    core_exact, core_suffix = {}, {}
+    core_excluded = set(sources_config.get("core_excluded_sources", []))
     stats, total_conditions, skipped = [], 0, 0
     registry_networks = []
     shared = {normalize_domain(name): reason for name, reason in policy["shared_roots"].items()}
@@ -526,6 +548,11 @@ def build(args):
                     rejected_here += 1
                     continue
                 merged[name] = merged.get(name, 0) | (1 << i)
+        if source["id"] not in core_excluded:
+            for kind, names, merged in (("domain", source_exact, core_exact), ("domain_suffix", source_suffix, core_suffix)):
+                for name in names:
+                    if not exclusion_reason(kind, name, shared, psl, service_owned):
+                        merged[name] = merged.get(name, 0) | (1 << i)
         metadata["filtered_conditions"] = rejected_here
         stats.append(metadata)
         skipped += rejected_here
@@ -535,11 +562,17 @@ def build(args):
     for kind, names, merged in (("domain", manual_exact, exact), ("domain_suffix", manual_suffix, suffix)):
         for name in names:
             merged[name] = merged.get(name, 0) | manual_mask
+    for kind, names, merged in (("domain", manual_exact, core_exact), ("domain_suffix", manual_suffix, core_suffix)):
+        for name in names:
+            merged[name] = merged.get(name, 0) | manual_mask
     total_conditions += len(manual_exact) + len(manual_suffix)
     sources_with_manual = sources + [{"id": "manual-vpn"}]
     before_minimize = len(exact) + len(suffix)
     original_exact, original_suffix = exact, suffix
     exact, suffix = minimize(original_exact, original_suffix)
+    core_exact, core_suffix = minimize(core_exact, core_suffix)
+    if len(core_exact) + len(core_suffix) < 1000:
+        raise BuildError("Compact domain set is unexpectedly small")
     count = len(exact) + len(suffix)
     if count < policy["validation"]["minimum_output_domains"]:
         raise BuildError(f"Unexpectedly small final set: {count}")
@@ -550,15 +583,25 @@ def build(args):
         if any(not match_rule(name, exact, suffix) for name in names):
             raise BuildError("Minimization lost an input condition")
     validation = validate_previous(previous, stats, count, policy)
-    registry_by_network = {}
-    for network, mask in registry_networks:
-        registry_by_network[network] = registry_by_network.get(network, 0) | mask
-    registry_networks = normalize_networks(registry_by_network)
+    registry_by_network, registry_cidr_by_network = {}, {}
+    registry_source_stats = []
+    for i, source in enumerate(registry_config["sources"]):
+        networks, parsed = parse_networks(fetched[source["id"]][0], source)
+        for network in map(ipaddress.ip_network, parsed["raw_prefixes"]):
+            if network.prefixlen == network.max_prefixlen:
+                registry_by_network[network] = registry_by_network.get(network, 0) | (1 << i)
+            else:
+                registry_cidr_by_network[network] = registry_cidr_by_network.get(network, 0) | (1 << i)
+        registry_source_stats.append(dict(fetched[source["id"]][1], **parsed,
+                                          description=source["description"]))
+    registry_networks = exact_networks(registry_by_network)
+    registry_cidr_networks = normalize_networks(registry_cidr_by_network)
     if not 1 <= len(registry_networks) <= policy["validation"]["maximum_registry_ips"]:
         raise BuildError(f"Unexpected registry IP count: {len(registry_networks)}")
     if any(network.prefixlen != network.max_prefixlen for network in registry_networks):
         raise BuildError("Registry IP set may contain only exact /32 and /128 addresses")
     registry_validation = validate_registry(previous, registry_networks, policy)
+    registry_cidr_validation = validate_registry(previous, registry_cidr_networks, policy, section="registry_cidr")
     probe_config = read_json(root / "config/probes.json")
     expectations = probe_config.get("expectations", {})
     probes = []
@@ -610,6 +653,18 @@ def build(args):
         compilation = compile_and_verify(stage, compiler, lock["source_format_version"])
         if compilation["version"] != "sing-box version " + lock["sing_box_version"]:
             raise BuildError("Unexpected compiler version; update the tool lock explicitly")
+        core_rules = {}
+        if core_exact:
+            core_rules["domain"] = sorted(core_exact)
+        if core_suffix:
+            core_rules["domain_suffix"] = sorted(core_suffix)
+        write_json(stage / "blocked-domains-core.json", {"version": lock["source_format_version"], "rules": [core_rules]})
+        with (stage / "blocked-domains-core.txt").open("w", encoding="utf-8", newline="\n") as stream:
+            for name in sorted(core_exact):
+                stream.write("full:" + name + "\n")
+            for name in sorted(core_suffix):
+                stream.write("domain:" + name + "\n")
+        core_compilation = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-domains-core")
         write_json(stage / "blocked-services-ip.json", {"version": lock["source_format_version"],
                                                        "rules": [{"ip_cidr": [str(n) for n in service_networks]}]})
         (stage / "blocked-services-ip.txt").write_text("".join(str(n) + "\n" for n in service_networks), encoding="utf-8")
@@ -621,15 +676,24 @@ def build(args):
         (stage / "blocked-registry-ip.txt").write_text("".join(str(n) + "\n" for n in registry_networks), encoding="utf-8")
         registry_compiler = compile_and_verify(stage, compiler, lock["source_format_version"],
                                                "blocked-registry-ip", networks_only=True)
+        write_json(stage / "blocked-registry-ip-cidr.json", {"version": lock["source_format_version"],
+                                                            "rules": [{"ip_cidr": [str(n) for n in registry_cidr_networks]}]})
+        (stage / "blocked-registry-ip-cidr.txt").write_text(
+            "".join(str(n) + "\n" for n in registry_cidr_networks), encoding="utf-8")
+        registry_cidr_compiler = compile_and_verify(stage, compiler, lock["source_format_version"],
+                                                    "blocked-registry-ip-cidr", networks_only=True)
         direct_rules = {}
         if direct_exact:
             direct_rules["domain"] = sorted(direct_exact)
         if direct_suffix:
             direct_rules["domain_suffix"] = sorted(direct_suffix)
+        if direct_ip_rules:
+            direct_rules["ip_cidr"] = [str(n) for n in normalize_networks(direct_ip_rules)]
         write_json(stage / "routing-direct-exceptions.json", {
             "version": lock["source_format_version"], "rules": [direct_rules] if direct_rules else []})
         direct_lines = ["full:" + name for name in sorted(direct_exact)]
         direct_lines += ["domain:" + name for name in sorted(direct_suffix)]
+        direct_lines += [str(n) for n in normalize_networks(direct_ip_rules)]
         (stage / "routing-direct-exceptions.txt").write_text("".join(line + "\n" for line in direct_lines), encoding="utf-8")
         direct_compiler = compile_and_verify(stage, compiler, lock["source_format_version"], "routing-direct-exceptions")
         excluded = [exclusions[key] for key in sorted(exclusions)]
@@ -652,6 +716,26 @@ def build(args):
             "prefixes": [str(n) for n in registry_networks],
             "srs_bytes": (stage / "blocked-registry-ip.srs").stat().st_size,
         }
+        registry_cidr_output = {
+            "total_prefixes": len(registry_cidr_networks),
+            "ipv4_prefixes": sum(n.version == 4 for n in registry_cidr_networks),
+            "ipv6_prefixes": sum(n.version == 6 for n in registry_cidr_networks),
+            "prefixes": [str(n) for n in registry_cidr_networks],
+            "srs_bytes": (stage / "blocked-registry-ip-cidr.srs").stat().st_size,
+        }
+        core_output = {"total_conditions": len(core_exact) + len(core_suffix),
+                       "exact": len(core_exact), "suffix": len(core_suffix),
+                       "source_ids": [s["id"] for s in sources if s["id"] not in core_excluded] + ["manual-vpn"],
+                       "srs_bytes": (stage / "blocked-domains-core.srs").stat().st_size}
+        built_at = utc_now()
+        repository = os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")
+        release_base = f"https://github.com/{repository}/releases/latest/download/"
+        catalog_names = ["blocked-domains", "blocked-domains-core", "blocked-services-ip",
+                         "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions"]
+        write_json(stage / "catalog.json", {"generated": built_at, "sources": [
+            {"id": "routing", "url": release_base + "{}", "names": catalog_names}
+        ]})
+        write_json(stage / "presets.user.json", make_presets(release_base))
         built_at = utc_now()
         write_json(stage / "status.json", {"schemaVersion": 1, "label": "domains",
                                            "message": f"{count:,}".replace(",", " "), "color": "brightgreen"})
@@ -662,10 +746,14 @@ def build(args):
             "schema_version": 1, "built_at": built_at, "offline_replay": args.offline,
             "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
             "service_networks": service_manifest,
+            "core": {"output": core_output, "compiler": core_compilation},
             "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]],
                             "output": registry_output, "validation": registry_validation, "compiler": registry_compiler},
+            "registry_cidr": {"sources": registry_source_stats, "output": registry_cidr_output,
+                              "validation": registry_cidr_validation, "compiler": registry_cidr_compiler},
             "direct_exceptions": {"rules": direct_records, "compiler": direct_compiler,
-                                  "output": {"total_conditions": len(direct_exact) + len(direct_suffix),
+                                  "output": {"total_conditions": len(direct_exact) + len(direct_suffix) + len(direct_ip_rules),
+                                             "prefixes": [str(n) for n in normalize_networks(direct_ip_rules)],
                                              "srs_bytes": (stage / "routing-direct-exceptions.srs").stat().st_size}},
             "manual_vpn": {"rules": manual_records},
             "domain_diff": {"added": domain_diff["total_added"], "removed": domain_diff["total_removed"],
@@ -700,6 +788,31 @@ def build(args):
                       "registry_ip": registry_output, "direct_exceptions": len(direct_records),
                       "srs_bytes": manifest["output"]["srs_bytes"], "excluded_broad_conditions": len(excluded),
                       "validation": compilation}, ensure_ascii=False), flush=True)
+
+
+def make_presets(release_base):
+    rule_urls = {
+        "routing": "blocked-domains.srs",
+        "routing-core": "blocked-domains-core.srs",
+        "routing-services": "blocked-services-ip.srs",
+        "routing-registry-ip": "blocked-registry-ip.srs",
+        "routing-registry-ip-cidr": "blocked-registry-ip-cidr.srs",
+    }
+    specifications = [
+        ("routing-full", "Routing · Full", ["routing", "routing-services", "routing-registry-ip"],
+         "Полная доменная база и точные IP. Direct-исключения настройте отдельным приоритетным правилом."),
+        ("routing-compact", "Routing · Compact", ["routing-core", "routing-services"],
+         "Компактная доменная база без двух крупнейших реестров. Direct-исключения настраиваются отдельно."),
+        ("routing-wide-cidr", "Routing · Wide CIDR", ["routing-registry-ip-cidr"],
+         "Дополнительные широкие CIDR. Подключайте только после проверки покрытия."),
+    ]
+    presets = []
+    for preset_id, name, tags, notice in specifications:
+        presets.append({"id": preset_id, "name": name, "iconSlug": "router", "category": "custom",
+                        "notice": notice, "engines": {"singbox": {
+                            "ruleSets": [{"tag": tag, "url": release_base + rule_urls[tag]} for tag in tags],
+                            "action": "tunnel"}}})
+    return {"presets": presets}
 
 
 def main():

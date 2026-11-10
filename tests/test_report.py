@@ -15,8 +15,9 @@ class ReportTests(unittest.TestCase):
             "environment": {"github_commit": "a" * 40, "repository": "owner/Routing"},
             "output": {"total_conditions": 2, "exact": 1, "suffix": 1, "srs_bytes": 100,
                        "files": {name: "0" * 64 for name in (
-                           "blocked-domains.srs", "blocked-services-ip.srs",
-                           "blocked-registry-ip.srs", "routing-direct-exceptions.srs")}},
+                           "blocked-domains.srs", "blocked-domains-core.srs", "blocked-services-ip.srs",
+                           "blocked-registry-ip.srs", "blocked-registry-ip-cidr.srs",
+                           "routing-direct-exceptions.srs")}},
             "sources": [{"id": "source", "url": "https://example.com/source", "unique_conditions": 2,
                          "ip_addresses": 1, "invalid": 0, "filtered_conditions": 0, "sha256": "0" * 64}],
             "service_networks": {
@@ -25,6 +26,11 @@ class ReportTests(unittest.TestCase):
                 "sources": [{"service": "Telegram", "url": "https://example.com/cidr",
                              "ipv4_prefixes": 1, "ipv6_prefixes": 0}],
             },
+            "core": {"output": {"total_conditions": 1, "srs_bytes": 40},
+                     "compiler": compiler},
+            "registry_cidr": {"validation": {"baseline": "previous-registry-build"},
+                              "output": {"total_prefixes": 1, "srs_bytes": 30, "prefixes": ["198.51.100.0/24"]},
+                              "compiler": compiler},
             "registry_ip": {"validation": {"baseline": "previous-registry-build"},
                             "output": {"total_prefixes": 1, "srs_bytes": 25, "prefixes": ["1.1.1.1/32"]}},
             "direct_exceptions": {"output": {"total_conditions": 0, "srs_bytes": 17}},

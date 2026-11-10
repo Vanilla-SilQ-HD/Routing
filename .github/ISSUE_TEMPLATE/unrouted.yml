@@ -1,0 +1,53 @@
+name: Ресурс идёт не по тому маршруту
+description: Сообщите о ресурсе, который идёт Direct, но должен идти через VPN, или наоборот
+title: "Unrouted: example.com"
+labels: ["unrouted", "coverage"]
+body:
+  - type: input
+    id: resource
+    attributes:
+      label: Resource
+      description: Один домен, IPv4 `/32` или IPv6 `/128`
+      placeholder: example.com или 203.0.113.1/32
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Провайдер и регион
+      placeholder: Например, Москва, домашний провайдер
+    validations:
+      required: true
+  - type: dropdown
+    id: expected
+    attributes:
+      label: Ожидаемый маршрут
+      options:
+        - VPN
+        - Direct
+    validations:
+      required: true
+  - type: dropdown
+    id: actual
+    attributes:
+      label: Фактический маршрут
+      options:
+        - Direct
+        - VPN
+    validations:
+      required: true
+  - type: input
+    id: manifest
+    attributes:
+      label: Версия manifest или релиза
+      placeholder: rules-... или дата сборки
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Диагностика
+      description: Приложите route trace, сработавшее правило, DNS-результат и описание недоступности.
+      placeholder: Что происходит при открытии ресурса? Какой outbound и правило показывает AWG Manager?
+    validations:
+      required: true

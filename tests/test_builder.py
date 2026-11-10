@@ -134,7 +134,7 @@ class ManualAndDiffTests(unittest.TestCase):
             build.write_json(path, {"schema_version": 1, "rules": [
                 {"kind": "domain_suffix", "domain": "Example.COM", "reason": "reviewed service", "review_after": "2027-01-01"}
             ]})
-            exact, suffix, records = build.read_manual_rules(path, psl, require_review=True)
+            exact, suffix, _, records = build.read_manual_rules(path, psl, require_review=True)
             self.assertFalse(exact)
             self.assertEqual(set(suffix), {"example.com"})
             self.assertEqual(records[0]["domain"], "example.com")
@@ -145,6 +145,25 @@ class ManualAndDiffTests(unittest.TestCase):
             ]:
                 build.write_json(path, {"schema_version": 1, "rules": [rule]})
                 with self.subTest(rule=rule), self.assertRaises(build.BuildError):
+                    build.read_manual_rules(path, psl, require_review=True)
+
+    def test_direct_ip_exceptions_are_exact_and_public(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "direct.json"
+            psl = build.PublicSuffixes("com\n")
+            build.write_json(path, {"schema_version": 1, "rules": [
+                {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "direct resolver", "review_after": "2027-01-01"}
+            ]})
+            exact, suffix, networks, records = build.read_manual_rules(path, psl, require_review=True)
+            self.assertFalse(exact)
+            self.assertFalse(suffix)
+            self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32"})
+            self.assertEqual(records[0]["domain"], "1.1.1.1/32")
+            for value in ["10.0.0.0/8", "1.1.1.0/24"]:
+                build.write_json(path, {"schema_version": 1, "rules": [
+                    {"kind": "ip_cidr", "domain": value, "reason": "invalid", "review_after": "2027-01-01"}
+                ]})
+                with self.subTest(value=value), self.assertRaises(build.BuildError):
                     build.read_manual_rules(path, psl, require_review=True)
 
     def test_semantic_diff_distinguishes_minimization_from_lost_coverage(self):
@@ -158,6 +177,13 @@ class ManualAndDiffTests(unittest.TestCase):
         self.assertEqual(diff["effective_removed"], 1)
         self.assertEqual(diff["effective_removed_sample"], ["old.other"])
         self.assertEqual(diff["effective_added"], 2)
+
+    def test_exact_registry_ips_never_merge_into_subnets(self):
+        networks = build.exact_networks([
+            ipaddress.ip_network("1.1.1.1/32"), ipaddress.ip_network("1.1.1.2/32"),
+            ipaddress.ip_network("1.1.1.1/32"), ipaddress.ip_network("2001:db8::1/128"),
+        ])
+        self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32", "1.1.1.2/32", "2001:db8::1/128"})
 
     def test_registry_drift_uses_actual_addresses(self):
         policy = {"validation": {"registry_ip": {"max_drop_fraction": .25, "max_growth_fraction": .5}}}
@@ -198,6 +224,20 @@ class BaselineGuardTests(unittest.TestCase):
         result = build.validate_previous(None, [], 1000, self.policy, self.now)
         self.assertEqual(result["baseline"], "first-build")
         self.assertTrue(result["warnings"])
+
+
+class AWGPresetTests(unittest.TestCase):
+    def test_vpn_presets_never_route_direct_exceptions_to_vpn(self):
+        presets = build.make_presets("https://example.com/")["presets"]
+        self.assertEqual({item["id"] for item in presets},
+                         {"routing-full", "routing-compact", "routing-wide-cidr"})
+        for preset in presets:
+            engine = preset["engines"]["singbox"]
+            self.assertEqual(engine["action"], "tunnel")
+            self.assertNotIn("routing-direct-exceptions", {item["tag"] for item in engine["ruleSets"]})
+            for rule_set in engine["ruleSets"]:
+                self.assertTrue(rule_set["url"].startswith("https://example.com/"))
+                self.assertTrue(rule_set["url"].endswith(".srs"))
 
 
 if __name__ == "__main__":

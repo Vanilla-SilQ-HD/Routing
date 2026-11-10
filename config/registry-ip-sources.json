@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "antifilter-ipresolve",
+      "url": "https://antifilter.download/list/ipresolve.lst",
+      "format": "cidr-lines",
+      "min_entries": 100000,
+      "max_entries": 300000,
+      "max_bytes": 33554432,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 0,
+      "min_ipv4_prefix_length": 12,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 4294967296,
+      "max_ipv6_addresses": 158456325028528675187087900672,
+      "description": "Точные IP и сети Antifilter"
+    },
+    {
+      "id": "antifilter-subnet",
+      "url": "https://antifilter.download/list/subnet.lst",
+      "format": "cidr-lines",
+      "min_entries": 50,
+      "max_entries": 500,
+      "max_bytes": 1048576,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 0,
+      "min_ipv4_prefix_length": 12,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 4294967296,
+      "max_ipv6_addresses": 158456325028528675187087900672,
+      "description": "Сети Antifilter, включая широкие диапазоны"
+    },
+    {
+      "id": "antifilter-community-ip",
+      "url": "https://community.antifilter.download/list/community.lst",
+      "format": "cidr-lines",
+      "min_entries": 500,
+      "max_entries": 5000,
+      "max_bytes": 1048576,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 0,
+      "min_ipv4_prefix_length": 12,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 4294967296,
+      "max_ipv6_addresses": 158456325028528675187087900672,
+      "description": "Сети Antifilter community"
+    },
+    {
+      "id": "refilter-ipsum",
+      "url": "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst",
+      "format": "cidr-lines",
+      "min_entries": 20000,
+      "max_entries": 100000,
+      "max_bytes": 33554432,
+      "min_ipv4_entries": 1,
+      "min_ipv6_entries": 0,
+      "min_ipv4_prefix_length": 12,
+      "min_ipv6_prefix_length": 32,
+      "max_ipv4_addresses": 4294967296,
+      "max_ipv6_addresses": 158456325028528675187087900672,
+      "description": "Сети Re-filter"
+    }
+  ]
+}

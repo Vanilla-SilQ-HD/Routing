@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "description": "Небольшая контрольная выборка внешних измерений. Не используется для автоматического изменения маршрутов.",
+  "provider": {
+    "name": "Globalping",
+    "url": "https://api.globalping.io/v1/measurements",
+    "country": "RU",
+    "probes_per_target": 2,
+    "timeout_seconds": 90
+  },
+  "targets": [
+    "chatgpt.com",
+    "api.openai.com",
+    "claude.ai",
+    "generativelanguage.googleapis.com",
+    "www.youtube.com",
+    "discord.com",
+    "instagram.com",
+    "telegram.org"
+  ]
+}

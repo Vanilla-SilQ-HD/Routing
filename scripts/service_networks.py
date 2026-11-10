@@ -65,6 +65,7 @@ def parse_networks(path, source, *, values=None):
     for version in (4, 6):
         if sum(n.version == version for n in networks) < source[f"min_ipv{version}_entries"]:
             raise ServiceNetworkError(f"Missing or incomplete IPv{version} coverage in {source['id']}")
+    raw_prefixes = [str(n) for n in sorted(networks, key=lambda n: (n.version, int(n.network_address), n.prefixlen))]
     normalized = normalize_networks(networks)
     stats = coverage(normalized)
     for version in (4, 6):
@@ -72,7 +73,7 @@ def parse_networks(path, source, *, values=None):
             raise ServiceNetworkError(f"Service IPv{version} address-space limit exceeded: {source['id']}")
     return normalized, {"records": records, "unique_conditions": len(networks),
                         "duplicate_records": records - len(networks), "invalid": 0,
-                        "prefixes": [str(n) for n in normalized], **stats}
+                        "prefixes": [str(n) for n in normalized], "raw_prefixes": raw_prefixes, **stats}
 
 
 def intersection_size(left, right):

@@ -53,7 +53,7 @@
     "max_output_drop_fraction": 0.20,
     "max_output_growth_fraction": 0.50,
     "max_previous_age_days": 7,
-    "maximum_registry_ips": 100000,
+    "maximum_registry_ips": 1000000,
     "max_service_stale_hours": 24,
     "registry_ip": {
       "max_drop_fraction": 0.25,

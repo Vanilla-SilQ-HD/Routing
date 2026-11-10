@@ -9,6 +9,7 @@ on:
         default: false
   schedule:
     - cron: '35 0,6,12,18 * * *'
+    - cron: '17 3 * * *'
   push:
     branches: [main]
     paths:
@@ -107,10 +108,33 @@ jobs:
           RESET_BASELINE: ${{ inputs.reset_baseline || false }}
         run: python scripts/publish_release.py --input incoming/dist --output release
 
-  pages:
-    name: Publish Routing Dashboard
+  monitor:
+    name: Measure external availability
     needs: publish
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+    env:
+      PYTHONUTF8: '1'
+      RUN_MONITOR: ${{ github.event_name == 'workflow_dispatch' || github.schedule == '17 3 * * *' }}
+    steps:
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Download the validated build from this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: selective-vpn-rules
+          path: incoming
+      - name: Run limited availability checks
+        run: python scripts/monitor.py --output incoming/dist/monitoring.json --html incoming/dist/monitoring.html
+
+  pages:
+    name: Publish Routing Dashboard
+    needs: [publish, monitor]
+    if: always() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -134,6 +158,16 @@ jobs:
           cp incoming/dist/updated.json _site/updated.json
           cp incoming/dist/manifest.json _site/manifest.json
           cp incoming/dist/domain-changes.json _site/domain-changes.json
+          cp incoming/dist/monitoring.json _site/monitoring.json
+          cp incoming/dist/monitoring.html _site/monitoring.html
+          cp incoming/dist/catalog.json _site/catalog.json
+          cp incoming/dist/presets.user.json _site/presets.user.json
+          cp incoming/dist/blocked-domains.srs _site/blocked-domains.srs
+          cp incoming/dist/blocked-domains-core.srs _site/blocked-domains-core.srs
+          cp incoming/dist/blocked-services-ip.srs _site/blocked-services-ip.srs
+          cp incoming/dist/blocked-registry-ip.srs _site/blocked-registry-ip.srs
+          cp incoming/dist/blocked-registry-ip-cidr.srs _site/blocked-registry-ip-cidr.srs
+          cp incoming/dist/routing-direct-exceptions.srs _site/routing-direct-exceptions.srs
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: _site

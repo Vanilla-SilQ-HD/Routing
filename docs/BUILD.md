@@ -57,14 +57,18 @@ Public Suffix List используется для фильтрации широ
 
 | Файл | Назначение |
 | --- | --- |
-| `blocked-domains.srs` | Домены для маршрутизации и DNS |
+| `blocked-domains.srs` | Полная доменная база для маршрутизации и DNS |
+| `blocked-domains-core.srs` | Compact: без Antifilter full и RKN |
 | `blocked-services-ip.srs` | Проверенные сети приложений |
-| `blocked-registry-ip.srs` | Точные `/32` и `/128` из блок-листов |
+| `blocked-registry-ip.srs` | Точные `/32` и `/128` без объединения в подсети |
+| `blocked-registry-ip-cidr.srs` | Необязательные широкие CIDR |
 | `routing-direct-exceptions.srs` | Приоритетные Direct-исключения |
+| `catalog.json` | Профили для AWG Manager |
+| `monitoring.json`, `monitoring.html` | История внешней проверки доступности |
 | `<имя>.srs.sha256` | SHA-256 соответствующего набора |
 | `manifest.json` | Источники, хеши, размеры и результаты проверок |
 | `domain-changes.json` | Семантический diff и выборки изменений |
-| `routing-evidence.zip` | Исходники всех наборов, probes, ручные правила, отчёт и badges |
+| `routing-evidence.zip` | Исходники всех наборов, probes, ручные правила, отчёт, badges и `presets.user.json` |
 | `release.json`, `SHA256SUMS` | Идентификатор сборки и хеши всех вложений |
 
 Интерактивная версия `report.html` публикуется как [Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/). Файлы `status.json` и `updated.json` используются для динамических badges в README.
