@@ -30,6 +30,14 @@ class BaselineArtifactTests(unittest.TestCase):
         with self.assertRaises(BuildError):
             read_manifest_zip(stream.getvalue())
 
+    def test_expanded_registry_manifest_fits_the_baseline_limit(self):
+        stream = io.BytesIO()
+        manifest = {"schema_version": 1, "registry_ip": {"prefixes": ["1.1.1.1/32"] * 300000}}
+        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", json.dumps(manifest))
+        self.assertGreater(len(json.dumps(manifest)), 2 * 1024 * 1024)
+        self.assertEqual(read_manifest_zip(stream.getvalue()), manifest)
+
     def test_token_is_removed_on_signed_storage_redirect(self):
         handler = CredentialSafeRedirect()
         request = urllib.request.Request("https://api.github.com/artifact", headers={"Authorization": "Bearer fixture-token"})

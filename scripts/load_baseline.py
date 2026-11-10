@@ -44,7 +44,7 @@ def get(url, token, as_json=True, limit=4 * 1024 * 1024, octet_stream=False):
 def read_manifest_zip(payload):
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         members = [m for m in archive.infolist() if m.filename == "manifest.json"]
-        if len(members) != 1 or members[0].file_size > 2 * 1024 * 1024:
+        if len(members) != 1 or members[0].file_size > 64 * 1024 * 1024:
             raise BuildError("Unexpected baseline artifact")
         return json.loads(archive.read(members[0]))
 
@@ -105,7 +105,8 @@ def main():
         for artifact in artifacts:
             if artifact["name"] != "rules-manifest" or artifact["expired"]:
                 continue
-            data = read_manifest_zip(get(base + f"/actions/artifacts/{artifact['id']}/zip", token, as_json=False))
+            data = read_manifest_zip(get(base + f"/actions/artifacts/{artifact['id']}/zip", token,
+                                         as_json=False, limit=64 * 1024 * 1024))
             output = Path("previous/manifest.json")
             output.parent.mkdir(exist_ok=True)
             write_json(output, data)
