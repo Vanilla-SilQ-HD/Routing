@@ -1,5 +1,6 @@
 import argparse
 import copy
+import datetime as dt
 import ipaddress
 import json
 from pathlib import Path
@@ -12,8 +13,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import build
-from service_networks import (ServiceNetworkError, coverage, normalize_networks,
-                              parse_networks, parse_ripe_source, prepare_services, validate_previous_services)
+from service_networks import (ServiceNetworkError, coverage, normalize_networks, parse_networks,
+                              parse_ripe_source, prepare_services, restore_services, validate_previous_services)
 
 TELEGRAM = """91.108.56.0/22
 91.108.4.0/22
@@ -200,6 +201,27 @@ class ServiceNetworkTests(unittest.TestCase):
             with self.subTest(mutation=mutations.index(mutate)), self.assertRaises(ServiceNetworkError):
                 source, fetched = self.ripe_fixture(mutate)
                 parse_ripe_source(source, fetched)
+
+
+    def test_stale_fallback_restores_only_a_complete_fresh_service_set(self):
+        _, stats = self.parse()
+        now = dt.datetime.now(dt.timezone.utc)
+        previous = {"built_at": now.isoformat(), "service_networks": {
+            "sources": [dict(self.source, **stats)]
+        }}
+        config = {"sources": [self.source]}
+        networks, manifest = restore_services(previous, config, 24, now=now)
+        self.assertEqual(networks, self.parse()[0])
+        self.assertEqual(manifest["validation"]["baseline"], "previous-service-data-stale")
+        self.assertEqual(manifest["output"]["total_prefixes"], stats["total_prefixes"])
+        old = dict(previous, built_at="2000-01-01T00:00:00+00:00")
+        with self.assertRaises(ServiceNetworkError):
+            restore_services(old, config, 24, now=now)
+        changed = {"sources": [dict(self.source, url="https://example.com/changed.txt")]}
+        with self.assertRaises(ServiceNetworkError):
+            restore_services(previous, changed, 24, now=now)
+        with self.assertRaises(ServiceNetworkError):
+            restore_services(None, config, 24, now=now)
 
 
 if __name__ == "__main__":

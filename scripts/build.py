@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 
 import idna
-from service_networks import normalize_networks, prepare_services
+from service_networks import normalize_networks, prepare_services, restore_services
 
 ROOT = Path(__file__).resolve().parents[1]
 USER_AGENT = "Routing/2 (public routing data only)"
@@ -138,19 +138,37 @@ def normalize_domain(value):
     return value
 
 
-def parse_source(path, source, max_invalid_fraction):
-    exact, suffix = set(), set()
-    invalid, samples, records = 0, [], 0
+def parse_source(path, source, max_invalid_fraction, ip_networks=None):
+    exact, suffix, source_ips = set(), set(), set()
+    invalid, samples, records, ip_records = 0, [], 0, 0
+    invalid_reasons = collections.Counter()
+
+    def reject(value, reason):
+        nonlocal invalid
+        invalid += 1
+        invalid_reasons[reason] += 1
+        if len(samples) < 30:
+            samples.append({"value": str(value)[:200], "reason": reason})
 
     def accept(value, kind):
-        nonlocal invalid, records
+        nonlocal records, ip_records
         records += 1
+        if kind == "domain_suffix" and isinstance(value, str):
+            try:
+                address = ipaddress.ip_address(value.strip())
+            except ValueError:
+                pass
+            else:
+                if not address.is_global:
+                    reject(value, "non-public IP address")
+                    return
+                source_ips.add(ipaddress.ip_network(f"{address}/{address.max_prefixlen}"))
+                ip_records += 1
+                return
         try:
             name = normalize_domain(value)
         except ValueError as exc:
-            invalid += 1
-            if len(samples) < 30:
-                samples.append({"value": str(value)[:200], "reason": str(exc)})
+            reject(value, str(exc))
         else:
             (exact if kind == "domain" else suffix).add(name)
 
@@ -186,10 +204,14 @@ def parse_source(path, source, max_invalid_fraction):
         raise BuildError(f"Source {source['id']} has only {count} unique conditions; minimum {source['min_entries']}")
     if records and invalid / records > max_invalid_fraction:
         raise BuildError(f"Too many invalid records in {source['id']}: {invalid}/{records}; examples: {samples[:3]}")
+    if ip_networks is not None:
+        ip_networks.update(source_ips)
     return exact, suffix, {
         "unique_conditions": count, "exact": len(exact), "suffix": len(suffix),
         "records": records, "invalid": invalid, "invalid_samples": samples,
-        "duplicate_records": records - invalid - count,
+        "invalid_by_reason": dict(sorted(invalid_reasons.items())),
+        "ip_records": ip_records, "ip_addresses": len(source_ips),
+        "duplicate_records": records - invalid - ip_records - count,
     }
 
 
@@ -297,6 +319,102 @@ def validate_previous(previous, stats, count, policy, now=None):
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
+def read_manual_rules(path, psl, *, require_review=False):
+    data = read_json(path)
+    if data.get("schema_version") != 1 or not isinstance(data.get("rules"), list):
+        raise BuildError(f"Unexpected manual rule schema: {path.name}")
+    exact, suffix, records = {}, {}, []
+    for item in data["rules"]:
+        if not isinstance(item, dict) or set(item) - {"kind", "domain", "reason", "review_after"}:
+            raise BuildError(f"Unexpected manual rule fields in {path.name}")
+        kind = item.get("kind")
+        if (kind not in {"domain", "domain_suffix"} or not isinstance(item.get("reason"), str)
+                or not item["reason"].strip()):
+            raise BuildError(f"Manual rule kind and reason are required in {path.name}")
+        if require_review:
+            try:
+                dt.date.fromisoformat(item.get("review_after", ""))
+            except ValueError as exc:
+                raise BuildError(f"Direct exception review_after must be an ISO date in {path.name}") from exc
+        name = normalize_domain(item.get("domain"))
+        if kind == "domain_suffix" and psl.is_broad_routing_suffix(name):
+            raise BuildError(f"Manual public-suffix rule is forbidden: {name}")
+        target = exact if kind == "domain" else suffix
+        if name in exact or name in suffix:
+            raise BuildError(f"Duplicate manual rule: {name}")
+        target[name] = dict(item)
+        records.append({**item, "kind": kind, "domain": name})
+    return exact, suffix, records
+
+
+def domain_groups(data):
+    groups = {"domain": set(), "domain_suffix": set()}
+    if set(data) != {"version", "rules"} or not isinstance(data["rules"], list):
+        raise BuildError("Unexpected domain rule-set for semantic diff")
+    for rule in data["rules"]:
+        if not isinstance(rule, dict) or set(rule) - groups.keys():
+            raise BuildError("Non-domain condition in semantic diff baseline")
+        for kind, values in rule.items():
+            if not isinstance(values, list):
+                raise BuildError("Unexpected domain list in semantic diff baseline")
+            groups[kind].update(values)
+    return groups
+
+
+def make_domain_diff(previous_rules, exact, suffix, original_exact, original_suffix, sources, limit=1000):
+    current = {"domain": set(exact), "domain_suffix": set(suffix)}
+    if previous_rules is None:
+        previous = {"domain": set(), "domain_suffix": set()}
+        baseline = "first-build"
+    else:
+        previous = domain_groups(previous_rules)
+        baseline = "previous-successful-or-approved-manifest"
+    changes = {"baseline": baseline, "sample_limit": limit, "by_kind": {}}
+    for kind in ("domain", "domain_suffix"):
+        added = sorted(current[kind] - previous[kind])
+        removed = sorted(previous[kind] - current[kind])
+        changes["by_kind"][kind] = {
+            "added": len(added), "removed": len(removed),
+            "added_sample": added[:limit], "removed_sample": removed[:limit],
+        }
+    added_names = set().union(*(set(current[kind]) - set(previous[kind]) for kind in current))
+    masks = collections.Counter()
+    for name in added_names:
+        mask = original_exact.get(name, 0) | original_suffix.get(name, 0)
+        for parent in parents(name):
+            mask |= original_suffix.get(parent, 0)
+        masks[mask] += 1
+    changes["added_by_sources"] = [
+        {"sources": [source["id"] for i, source in enumerate(sources) if mask & (1 << i)], "conditions": amount}
+        for mask, amount in sorted(masks.items())
+    ]
+    changes["total_added"] = sum(item["added"] for item in changes["by_kind"].values())
+    changes["total_removed"] = sum(item["removed"] for item in changes["by_kind"].values())
+    previous_names = previous["domain"] | previous["domain_suffix"]
+    current_names = current["domain"] | current["domain_suffix"]
+    uncovered_removed = sorted(name for name in previous_names if not match_rule(name, current["domain"], current["domain_suffix"]))
+    newly_covered = sorted(name for name in current_names if not match_rule(name, previous["domain"], previous["domain_suffix"]))
+    changes["effective_added"] = len(newly_covered)
+    changes["effective_removed"] = len(uncovered_removed)
+    changes["effective_added_sample"] = newly_covered[:limit]
+    changes["effective_removed_sample"] = uncovered_removed[:limit]
+    return changes
+
+
+def validate_registry(previous, networks, policy, now=None):
+    current = {str(network) for network in networks}
+    registry = previous.get("registry_ip") if previous else None
+    if not registry:
+        return {"baseline": "first-registry-build", "warnings": []}
+    old = set(registry["output"]["prefixes"])
+    removed, added = old - current, current - old
+    limits = policy["validation"]["registry_ip"]
+    if len(removed) > len(old) * limits["max_drop_fraction"] or len(added) > len(old) * limits["max_growth_fraction"]:
+        raise BuildError(f"Unexpected registry IP coverage change: +{len(added)} -{len(removed)}")
+    return {"baseline": "previous-registry-build", "warnings": [],
+            "added": len(added), "removed": len(removed)}
+
+
 def compile_and_verify(directory, executable, source_format_version, basename="blocked-domains", networks_only=False):
     version = subprocess.run([str(executable), "version"], capture_output=True, text=True, check=True, timeout=15).stdout.splitlines()[0]
     source, binary, decoded = (directory / name for name in (basename + ".json", basename + ".srs", "roundtrip.json"))
@@ -306,13 +424,13 @@ def compile_and_verify(directory, executable, source_format_version, basename="b
     def conditions(data):
         if networks_only:
             networks = []
-            for rule in data["rules"]:
+            for rule in data.get("rules", []):
                 if set(rule) != {"ip_cidr"} or not isinstance(rule["ip_cidr"], list) or not rule["ip_cidr"]:
                     raise BuildError("Compiler roundtrip introduced a non-CIDR or empty condition")
                 networks.extend(ipaddress.ip_network(n, strict=True) for n in rule["ip_cidr"])
             return normalize_networks(networks)
         groups = {"domain": set(), "domain_suffix": set()}
-        for rule in data["rules"]:
+        for rule in data.get("rules", []):
             if set(rule) - groups.keys():
                 raise BuildError("Compiler roundtrip introduced a non-domain condition")
             for kind, values in rule.items():
@@ -337,31 +455,36 @@ def make_report(manifest, exclusions, probes):
     e = html.escape
     def table(headings, rows):
         return "<table><thead><tr>" + "".join(f"<th>{e(str(x))}</th>" for x in headings) + "</tr></thead><tbody>" + "".join("<tr>" + "".join(f"<td>{e(str(x))}</td>" for x in row) + "</tr>" for row in rows) + "</tbody></table>"
-    source_table = table(["Источник", "Уникальных условий", "Неверных записей", "SHA-256"],
-                         [[s["id"], f"{s['unique_conditions']:,}", s["invalid"], s["sha256"]] for s in manifest["sources"]])
-    probe_table = table(["Домен", "Совпадение с базой", "Условие", "Источники"],
-                        [[p["domain"], p["base_decision"], p.get("matched_rule") or "—", ", ".join(p["sources"])] for p in probes])
+    source_table = table(["Источник", "Доменных условий", "Точных IP", "Неверных записей", "SHA-256"],
+                         [[s["id"], f"{s['unique_conditions']:,}", s["ip_addresses"], s["invalid"], s["sha256"]]
+                          for s in manifest["sources"]])
+    probe_table = table(["Домен", "База", "После исключений", "Ожидание", "Условие", "Источники"],
+                        [[p["domain"], p["base_decision"], p["final_decision"], p.get("expected") or "—",
+                          p.get("matched_rule") or "—", ", ".join(p["sources"])] for p in probes])
     excluded_table = table(["Условие", "Причина", "Источники"],
                            [[x["domain"], x["reason"], ", ".join(x["sources"])] for x in exclusions])
     out = manifest["output"]
     services = manifest["service_networks"]
+    registry = manifest["registry_ip"]
+    direct = manifest["direct_exceptions"]
     service_table = table(["Сервис", "Источник", "IPv4-сетей", "IPv6-сетей", "SHA-256"],
                           [[s["service"], s["url"], s["ipv4_prefixes"], s["ipv6_prefixes"], s["sha256"]]
                            for s in services["sources"]])
     return f'''<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Проверка автоматической VPN-базы</title><style>body{{font:16px/1.55 system-ui,sans-serif;background:#f6f8fb;color:#152137;max-width:1200px;margin:32px auto;padding:0 24px}}h1,h2{{line-height:1.2}}table{{border-collapse:collapse;width:100%;background:white;margin:20px 0}}td,th{{padding:10px 12px;border:1px solid #dce3ed;text-align:left;overflow-wrap:anywhere}}th{{background:#e9eff8}}.box{{background:#e6f1ff;border-left:4px solid #3971ce;padding:16px}}code{{background:#e9eff8;padding:2px 4px}}small{{color:#506078}}</style>
 <h1>Автоматическая база для выборочного VPN</h1><p>Сборка: {e(manifest['built_at'])}. Все времена UTC.</p>
-<p class="box"><b>Два набора для sing-box.</b> blocked-domains.srs содержит домены и подходит для маршрутизации и DNS. blocked-services-ip.srs содержит проверенные сети приложений и используется только в маршрутизации. Итоговый маршрут зависит от порядка ваших правил. Сборка не настраивает VPN или DNS.</p>
-<h2>Результат</h2><p>{out['total_conditions']:,} доменных условий: {out['suffix']:,} суффиксов и {out['exact']:,} точных имён. SRS: {out['srs_bytes']:,} байт. Удалено широких условий: {len(exclusions)}. Избыточных условий после объединения: {manifest['counts']['redundant_conditions_removed']:,}.</p>
-<p>Домены собираются из исходников до минимизации. Широкие записи удаляются отдельно; явно перечисленные поддомены сохраняются. Общих категорий «Россия» и «все ИИ», облачных ASN и персональных исключений в базе нет.</p>
-<h2>Источники</h2>{source_table}<p>Дата получения не доказывает актуальность каждой блокировки. В частности, unavailable-in-russia использует накопительное добавление. Полные URL, времена и хеши записаны в manifest.json.</p>
-<h2>Сети приложений</h2><p>{services['output']['total_prefixes']} сетей после точного объединения соседних диапазонов; SRS: {services['output']['srs_bytes']} байт. Официальный список Telegram дополняется текущими анонсами его выделенных сетей по RIPE RIS с проверкой владельца ASN. Включены IPv4 и IPv6. Общие сети облачных провайдеров и адреса из DNS-ответов не добавляются.</p>{service_table}
-<p>Сервисный набор дополняет доменные условия для соединений без имени назначения. Он не охватывает произвольные IP собеседников в P2P-звонках и не гарантирует покрытие всех приложений. Изменения покрытия проверяются отдельно от доменной базы.</p>
-<h2>Проверка доменов</h2><p>VPN — есть совпадение с базой; Direct — совпадения нет. Это не сетевой тест доступности и не чтение действующих правил роутера. Имена из этого раздела не используются как принудительные исключения.</p>{probe_table}
-<h2>Удалённые широкие условия</h2><p>Удаление родительского условия не удаляет его отдельно перечисленные поддомены. PSL включает ICANN и PRIVATE. Зависимости отдельных ограниченных сервисов (например, claudeusercontent.com) сохраняются при наличии в источниках; политика не добавляет их самостоятельно. PRIVATE wildcard не используется для удаления отдельных доменов арендаторов.</p>{excluded_table}
-<h2>Валидация</h2><p>Компиляция обоих SRS, обратное декодирование со сравнением доменов и IP-покрытия, sing-box check: выполнены. Программа sing-box запускалась только как компилятор и валидатор, без сетевого сервиса.</p>
-<p>Резкое изменение размера относительно предыдущей успешной или принятой версии останавливает сборку. Ошибка обязательного источника не заменяется неполным или пустым набором. Текущий тип сравнения: {e(manifest['validation']['baseline'])}. GitHub Actions публикует проверенный результат в Releases отдельным этапом. Статус публикации указан в соответствующем запуске Actions.</p>
-<h2>Границы результата</h2><p>Источники могут содержать ошибочные и устаревшие записи. Фильтрация общей платформы может оставить непокрытыми блокировки, для которых источник не перечисляет конкретные поддомены. Доменные правила не гарантируют охват соединений по IP или со скрытым именем сайта. Потребление памяти, DNS, IPv6 и реальные маршруты необходимо проверять на своём устройстве.</p>
+<p class="box"><b>Четыре набора для sing-box.</b> blocked-domains.srs — домены для маршрутизации и DNS; blocked-services-ip.srs — проверенные сети приложений; blocked-registry-ip.srs — только точные /32 и /128 из блок-листов; routing-direct-exceptions.srs — приоритетные Direct-исключения. IP-наборы не используются в DNS. Итог зависит от порядка правил.</p>
+<h2>Результат</h2><p>{out['total_conditions']:,} доменных условий: {out['suffix']:,} суффиксов и {out['exact']:,} точных имён. SRS: {out['srs_bytes']:,} байт. Удалено широких условий: {len(exclusions)}. Избыточных условий: {manifest['counts']['redundant_conditions_removed']:,}.</p>
+<p>По сравнению с предыдущим доменным набором: <b>+{manifest['domain_diff']['added']} / −{manifest['domain_diff']['removed']}</b>. Подробности и выборки — в domain-changes.json. Ручные правила снабжены причинами; Direct-исключения также имеют дату пересмотра.</p>
+<h2>Источники</h2>{source_table}<p>Дата получения не доказывает актуальность каждой блокировки. Некоторые источники пересекаются и используются для дополнения и происхождения записей, а не как независимые подтверждения. Полные URL, времена, хеши и классификация неверных записей — в manifest.json.</p>
+<h2>Сети приложений</h2><p>{services['output']['total_prefixes']} сетей; SRS: {services['output']['srs_bytes']} байт. Текущий baseline: {e(services['validation']['baseline'])}. Общие облачные сети и адреса из DNS-ответов не добавляются.</p>{service_table}
+<h2>Точные IP из блок-листов</h2><p>{registry['output']['total_prefixes']} адресов: IPv4 {registry['output']['ipv4_prefixes']}, IPv6 {registry['output']['ipv6_prefixes']}. Это отдельный набор, потому что адрес может использоваться несколькими ресурсами. Он не смешан с проверенными сетями Telegram.</p>
+<h2>Direct-исключения</h2><p>{direct['output']['total_conditions']} условий. В AWG Manager набор routing-direct-exceptions.srs должен быть выше общих VPN-правил.</p>
+<h2>Проверка доменов</h2><p>База — совпадение до исключений; После исключений — итоговый проектный маршрут. Expectation с заданным значением является обязательной регрессионной проверкой и останавливает сборку при несовпадении. Это не сетевой тест доступности и не чтение конфигурации роутера.</p>{probe_table}
+<h2>Удалённые широкие условия</h2><p>Удаление родительского условия не удаляет отдельно перечисленные поддомены. PSL включает ICANN и PRIVATE. Явные ручные правила для общей инфраструктуры допускаются только с причиной; public suffixes запрещены и там.</p>{excluded_table}
+<h2>Валидация</h2><p>Компиляция всех SRS, обратное декодирование со сравнением условий, sing-box check: выполнены. Сетевой сервис не запускался. Семантический diff дополняет контроль резкого изменения размера.</p>
+<p>Ошибка обязательного доменного источника останавливает сборку. При сбое сервисного источника допускается только полный ранее проверенный набор не старше настроенного срока; частичный IP-набор не выпускается. Доменный baseline: {e(manifest['validation']['baseline'])}.</p>
+<h2>Границы результата</h2><p>Источники могут содержать ошибочные и устаревшие записи. Фильтрация общей платформы может оставить непокрытые зависимости. Доменные правила не гарантируют охват соединений по IP, P2P или со скрытым именем сайта. Память, DNS, IPv6 и реальные маршруты необходимо проверять на устройстве.</p>
 </html>'''
 
 
@@ -371,32 +494,60 @@ def build(args):
     sources_config = read_json(root / "config/sources.json")
     service_config = read_json(root / "config/service-networks.json")
     policy = read_json(root / "config/policy.json")
+    previous = read_json(args.previous) if args.previous else None
     sources = sources_config["sources"]
     psl_source = sources_config["public_suffix_list"]
-    all_sources = sources + [psl_source] + service_config["sources"]
-    all_sources += [s["identity_source"] for s in service_config["sources"] if "identity_source" in s]
+    domain_inputs = sources + [psl_source]
+    service_inputs = service_config["sources"] + [s["identity_source"] for s in service_config["sources"] if "identity_source" in s]
+    all_sources = domain_inputs + service_inputs
     if len({s["id"] for s in all_sources}) != len(all_sources):
         raise BuildError("Duplicate input source ID")
     cache = root / "cache/sources"
+    fetched, service_errors = {}, {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         futures = {s["id"]: pool.submit(fetch_source, s, cache, args.offline) for s in all_sources}
-        fetched = {key: future.result() for key, future in futures.items()}
+        for key, future in futures.items():
+            try:
+                fetched[key] = future.result()
+            except BuildError as exc:
+                if key in {s["id"] for s in domain_inputs}:
+                    raise
+                service_errors[key] = str(exc)
     if args.fetch_only:
+        if service_errors:
+            raise BuildError(f"Cannot cache every service input: {service_errors}")
         print("All required public inputs cached and hashed. No compilation performed.")
         return
-    previous = read_json(args.previous) if args.previous else None
-    service_networks, service_manifest = prepare_services(fetched, service_config, previous)
+    if service_errors:
+        if args.offline:
+            raise BuildError(f"Offline replay is missing service inputs: {sorted(service_errors)}")
+        try:
+            service_networks, service_manifest = restore_services(
+                previous, service_config, policy["validation"]["max_service_stale_hours"])
+        except ValueError as exc:
+            raise BuildError(f"Service download failed and stale fallback is unavailable: {service_errors}; {exc}") from exc
+        service_manifest["validation"]["fetch_errors"] = service_errors
+    else:
+        service_networks, service_manifest = prepare_services(fetched, service_config, previous)
     psl = PublicSuffixes(fetched[psl_source["id"]][0].read_text(encoding="utf-8-sig"))
     if psl.count < psl_source["min_entries"]:
         raise BuildError("Public Suffix List is unexpectedly small")
+    manual_exact, manual_suffix, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
+    direct_exact, direct_suffix, direct_records = read_manual_rules(
+        root / "config/direct-exceptions.json", psl, require_review=True)
     exact, suffix, exclusions = {}, {}, {}
     stats, total_conditions, skipped = [], 0, 0
+    registry_networks = []
     shared = {normalize_domain(name): reason for name, reason in policy["shared_roots"].items()}
     service_owned = {normalize_domain(name) for name in policy.get("service_owned_suffixes", {})}
     if shared.keys() & service_owned:
         raise BuildError("A domain cannot be both shared infrastructure and a service-owned exception")
     for i, source in enumerate(sources):
-        source_exact, source_suffix, parsed = parse_source(fetched[source["id"]][0], source, policy["validation"]["max_invalid_fraction"])
+        source_ips = set()
+        source_exact, source_suffix, parsed = parse_source(
+            fetched[source["id"]][0], source, policy["validation"]["max_invalid_fraction"], source_ips)
+        for network in source_ips:
+            registry_networks.append((network, 1 << i))
         metadata = dict(fetched[source["id"]][1], **parsed, description=source["description"])
         if "caveat" in source:
             metadata["caveat"] = source["caveat"]
@@ -415,7 +566,14 @@ def build(args):
         metadata["filtered_conditions"] = rejected_here
         stats.append(metadata)
         skipped += rejected_here
-        print(f"Parsed {source['id']}: {parsed['unique_conditions']:,} conditions, {rejected_here} broad rules excluded", flush=True)
+        print(f"Parsed {source['id']}: {parsed['unique_conditions']:,} conditions, "
+              f"{parsed['ip_addresses']} exact IPs, {rejected_here} broad rules excluded", flush=True)
+    manual_mask = 1 << len(sources)
+    for kind, names, merged in (("domain", manual_exact, exact), ("domain_suffix", manual_suffix, suffix)):
+        for name in names:
+            merged[name] = merged.get(name, 0) | manual_mask
+    total_conditions += len(manual_exact) + len(manual_suffix)
+    sources_with_manual = sources + [{"id": "manual-vpn"}]
     before_minimize = len(exact) + len(suffix)
     original_exact, original_suffix = exact, suffix
     exact, suffix = minimize(original_exact, original_suffix)
@@ -423,26 +581,52 @@ def build(args):
     if count < policy["validation"]["minimum_output_domains"]:
         raise BuildError(f"Unexpectedly small final set: {count}")
     for name in suffix:
-        if exclusion_reason("domain_suffix", name, shared, psl, service_owned):
+        if name not in manual_suffix and exclusion_reason("domain_suffix", name, shared, psl, service_owned):
             raise BuildError("Broad rule survived filtering")
     for names in (original_exact, original_suffix):
         if any(not match_rule(name, exact, suffix) for name in names):
             raise BuildError("Minimization lost an input condition")
     validation = validate_previous(previous, stats, count, policy)
+    registry_by_network = {}
+    for network, mask in registry_networks:
+        registry_by_network[network] = registry_by_network.get(network, 0) | mask
+    registry_networks = normalize_networks(registry_by_network)
+    if not 1 <= len(registry_networks) <= policy["validation"]["maximum_registry_ips"]:
+        raise BuildError(f"Unexpected registry IP count: {len(registry_networks)}")
+    if any(network.prefixlen != network.max_prefixlen for network in registry_networks):
+        raise BuildError("Registry IP set may contain only exact /32 and /128 addresses")
+    registry_validation = validate_registry(previous, registry_networks, policy)
+    probe_config = read_json(root / "config/probes.json")
+    expectations = probe_config.get("expectations", {})
     probes = []
-    for domain in read_json(root / "config/probes.json")["domains"]:
+    for domain in probe_config["domains"]:
         name = normalize_domain(domain)
         match = match_rule(name, exact, suffix)
+        direct_match = match_rule(name, direct_exact, direct_suffix)
         mask = original_exact.get(name, 0) | original_suffix.get(name, 0)
         for parent in parents(name):
             mask |= original_suffix.get(parent, 0)
+        final_decision = "Direct" if direct_match else ("VPN" if match else "Direct")
+        expected = expectations.get(name)
+        if expected is not None and expected not in {"VPN", "Direct"}:
+            raise BuildError(f"Unexpected probe expectation for {name}: {expected}")
+        if expected is not None and final_decision != expected:
+            raise BuildError(f"Probe regression for {name}: expected {expected}, got {final_decision}")
         probes.append({"domain": name, "base_decision": "VPN" if match else "Direct",
+                       "final_decision": final_decision, "expected": expected,
                        "matched_type": match[0] if match else None, "matched_rule": match[1] if match else None,
-                       "sources": [s["id"] for i, s in enumerate(sources) if mask & (1 << i)]})
+                       "direct_exception": direct_match[1] if direct_match else None,
+                       "sources": [s["id"] for i, s in enumerate(sources_with_manual) if mask & (1 << i)]})
     lock = read_json(root / "config/tools-lock.json")
     compiler = Path(args.sing_box).resolve() if args.sing_box else root / ".tools" / ("sing-box.exe" if os.name == "nt" else "sing-box")
     if not compiler.is_file():
         raise BuildError("Compiler missing. Run scripts/install_tools.py first.")
+    previous_rules = read_json(args.previous_rules) if args.previous_rules else None
+    if previous_rules is None and args.previous:
+        previous_rules_path = Path(args.previous).with_name("blocked-domains.json")
+        if previous_rules_path.is_file():
+            previous_rules = read_json(previous_rules_path)
+    domain_diff = make_domain_diff(previous_rules, exact, suffix, original_exact, original_suffix, sources_with_manual)
     target = Path(args.output).resolve() if args.output else root / "dist"
     if target.exists() and any(target.iterdir()):
         raise BuildError(f"Output is not empty; refusing to overwrite a previous build: {target}")
@@ -468,23 +652,57 @@ def build(args):
         (stage / "blocked-services-ip.txt").write_text("".join(str(n) + "\n" for n in service_networks), encoding="utf-8")
         service_manifest["compiler"] = compile_and_verify(stage, compiler, lock["source_format_version"],
                                                           "blocked-services-ip", networks_only=True)
-        if service_manifest["compiler"]["version"] != compilation["version"]:
-            raise BuildError("Service compiler version mismatch")
         service_manifest["output"]["srs_bytes"] = (stage / "blocked-services-ip.srs").stat().st_size
+        write_json(stage / "blocked-registry-ip.json", {"version": lock["source_format_version"],
+                                                       "rules": [{"ip_cidr": [str(n) for n in registry_networks]}]})
+        (stage / "blocked-registry-ip.txt").write_text("".join(str(n) + "\n" for n in registry_networks), encoding="utf-8")
+        registry_compiler = compile_and_verify(stage, compiler, lock["source_format_version"],
+                                               "blocked-registry-ip", networks_only=True)
+        direct_rules = {}
+        if direct_exact:
+            direct_rules["domain"] = sorted(direct_exact)
+        if direct_suffix:
+            direct_rules["domain_suffix"] = sorted(direct_suffix)
+        write_json(stage / "routing-direct-exceptions.json", {
+            "version": lock["source_format_version"], "rules": [direct_rules] if direct_rules else []})
+        direct_lines = ["full:" + name for name in sorted(direct_exact)]
+        direct_lines += ["domain:" + name for name in sorted(direct_suffix)]
+        (stage / "routing-direct-exceptions.txt").write_text("".join(line + "\n" for line in direct_lines), encoding="utf-8")
+        direct_compiler = compile_and_verify(stage, compiler, lock["source_format_version"], "routing-direct-exceptions")
         excluded = [exclusions[key] for key in sorted(exclusions)]
         write_json(stage / "excluded.json", excluded)
         write_json(stage / "probes.json", probes)
+        write_json(stage / "domain-changes.json", domain_diff)
+        write_json(stage / "manual-rules.json", {"vpn": manual_records, "direct_exceptions": direct_records})
         recipe_paths = list((root / "config").glob("*.json")) + list((root / "scripts").glob("*.py")) + [root / "requirements.txt", root / ".github/workflows/build.yml"]
         config_hashes = {str(path.relative_to(root)).replace(os.sep, "/"): file_sha256(path) for path in sorted(recipe_paths)}
         source_bits = collections.Counter(mask for mask in original_exact.values())
         source_bits.update(original_suffix.values())
         intersections = []
         for mask, amount in sorted(source_bits.items()):
-            intersections.append({"sources": [s["id"] for i, s in enumerate(sources) if mask & (1 << i)], "unique_conditions": amount})
+            intersections.append({"sources": [s["id"] for i, s in enumerate(sources_with_manual) if mask & (1 << i)],
+                                  "unique_conditions": amount})
+        registry_output = {
+            "total_prefixes": len(registry_networks),
+            "ipv4_prefixes": sum(n.version == 4 for n in registry_networks),
+            "ipv6_prefixes": sum(n.version == 6 for n in registry_networks),
+            "prefixes": [str(n) for n in registry_networks],
+            "srs_bytes": (stage / "blocked-registry-ip.srs").stat().st_size,
+        }
+        output_files = [path.name for path in stage.iterdir() if path.is_file()]
         manifest = {
             "schema_version": 1, "built_at": utc_now(), "offline_replay": args.offline,
             "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
             "service_networks": service_manifest,
+            "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]],
+                            "output": registry_output, "validation": registry_validation, "compiler": registry_compiler},
+            "direct_exceptions": {"rules": direct_records, "compiler": direct_compiler,
+                                  "output": {"total_conditions": len(direct_exact) + len(direct_suffix),
+                                             "srs_bytes": (stage / "routing-direct-exceptions.srs").stat().st_size}},
+            "manual_vpn": {"rules": manual_records},
+            "domain_diff": {"added": domain_diff["total_added"], "removed": domain_diff["total_removed"],
+                            "effective_added": domain_diff["effective_added"],
+                            "effective_removed": domain_diff["effective_removed"]},
             "configuration_sha256": config_hashes, "compiler": compilation,
             "environment": {"python": sys.version.split()[0], "idna": idna.__version__, "github_commit": os.environ.get("GITHUB_SHA")},
             "counts": {"source_unique_conditions_sum": total_conditions, "filtered_source_conditions_sum": skipped,
@@ -494,20 +712,23 @@ def build(args):
             "exact_intersections_before_minimization": intersections,
             "output": {"total_conditions": count, "exact": len(exact), "suffix": len(suffix),
                        "srs_bytes": (stage / "blocked-domains.srs").stat().st_size,
-                       "files": {name: file_sha256(stage / name) for name in ("blocked-domains.json", "blocked-domains.srs", "blocked-domains.txt", "blocked-services-ip.json", "blocked-services-ip.srs", "blocked-services-ip.txt", "excluded.json", "probes.json")}},
+                       "files": {name: file_sha256(stage / name) for name in output_files}},
             "validation": validation, "elapsed_seconds": round(time.monotonic() - started, 2),
             "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": True, "dns_configuration_included": False},
+                      "ip_rules_included": True, "registry_ip_rules_included": True,
+                      "direct_exceptions_included": True, "dns_configuration_included": False},
         }
         write_json(stage / "manifest.json", manifest)
         (stage / "report.html").write_text(make_report(manifest, excluded, probes), encoding="utf-8")
         (stage / "SHA256SUMS").write_text("".join(f"{file_sha256(path)}  {path.name}\n" for path in sorted(stage.iterdir()) if path.is_file()), encoding="utf-8")
         if target.exists():
-            target.rmdir()  # Only the empty directory checked above, never a recursive removal.
+            target.rmdir()
         stage.rename(target)
-    print(json.dumps({"output": str(target), "domains": count, "service_networks": service_manifest["output"], "srs_bytes": manifest["output"]["srs_bytes"],
-                      "excluded_broad_conditions": len(excluded), "validation": compilation}, ensure_ascii=False), flush=True)
+    print(json.dumps({"output": str(target), "domains": count, "service_networks": service_manifest["output"],
+                      "registry_ip": registry_output, "direct_exceptions": len(direct_records),
+                      "srs_bytes": manifest["output"]["srs_bytes"], "excluded_broad_conditions": len(excluded),
+                      "validation": compilation}, ensure_ascii=False), flush=True)
 
 
 def main():
@@ -516,6 +737,7 @@ def main():
     parser.add_argument("--offline", action="store_true", help="Replay only SHA-256-verified cached inputs; no network")
     parser.add_argument("--fetch-only", action="store_true")
     parser.add_argument("--previous", help="Previous successful/approved manifest.json for drift guards")
+    parser.add_argument("--previous-rules", help="Previous blocked-domains.json for the semantic diff")
     parser.add_argument("--output", help="A new, empty output directory")
     parser.add_argument("--sing-box", help="Path to the pinned sing-box compiler")
     args = parser.parse_args()

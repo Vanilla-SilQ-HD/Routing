@@ -2,6 +2,7 @@
 
 GitHub read-only APIs only. No publication and no router access.
 """
+import gzip
 import io
 import json
 import os
@@ -24,7 +25,7 @@ class CredentialSafeRedirect(HTTPSRedirect):
         return redirected
 
 
-def get(url, token, as_json=True):
+def get(url, token, as_json=True, limit=4 * 1024 * 1024):
     if urllib.parse.urlsplit(url).hostname != "api.github.com":
         raise BuildError("Credentials may only be sent to api.github.com")
     request = urllib.request.Request(url, headers={
@@ -32,9 +33,9 @@ def get(url, token, as_json=True):
         "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
     })
     opener = urllib.request.build_opener(CredentialSafeRedirect())
-    with opener.open(request, timeout=30) as response:
-        payload = response.read(4 * 1024 * 1024 + 1)
-        if len(payload) > 4 * 1024 * 1024:
+    with opener.open(request, timeout=120) as response:
+        payload = response.read(limit + 1)
+        if len(payload) > limit:
             raise BuildError("Baseline response exceeds size limit")
     return json.loads(payload) if as_json else payload
 
@@ -45,6 +46,29 @@ def read_manifest_zip(payload):
         if len(members) != 1 or members[0].file_size > 2 * 1024 * 1024:
             raise BuildError("Unexpected baseline artifact")
         return json.loads(archive.read(members[0]))
+
+
+def restore_latest_rules(base, token):
+    try:
+        latest = get(base + "/releases/latest", token)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return
+        raise
+    assets = {asset["name"]: asset for asset in latest.get("assets", [])}
+    asset = assets.get("blocked-domains.json.gz")
+    if asset is None:
+        return
+    payload = get(base + f"/releases/assets/{int(asset['id'])}", token,
+                  as_json=False, limit=128 * 1024 * 1024)
+    with gzip.GzipFile(fileobj=io.BytesIO(payload)) as compressed:
+        rules = compressed.read(512 * 1024 * 1024 + 1)
+    if len(rules) > 512 * 1024 * 1024:
+        raise BuildError("Previous domain rules exceed size limit")
+    output = Path("previous/blocked-domains.json")
+    output.parent.mkdir(exist_ok=True)
+    output.write_bytes(rules)
+    print(f"Restored previous domain rules from release {latest['tag_name']}")
 
 
 def main():
@@ -63,6 +87,7 @@ def main():
     runs = get(base + "/actions/workflows/build.yml/runs?" + query, token)["workflow_runs"]
     runs = [r for r in runs if str(r["id"]) != os.environ.get("GITHUB_RUN_ID") and r["event"] in {"schedule", "push", "workflow_dispatch"}]
     if not runs:
+        restore_latest_rules(base, token)
         print("No previous successful build on this branch. Bootstrap preview.")
         return
     for run in runs:
@@ -74,6 +99,7 @@ def main():
             output = Path("previous/manifest.json")
             output.parent.mkdir(exist_ok=True)
             write_json(output, data)
+            restore_latest_rules(base, token)
             print(f"Restored baseline from successful run {run['id']}")
             return
     raise BuildError("Previous builds exist but no usable manifest remains; review and explicitly reset the baseline")

@@ -34,6 +34,56 @@
       "description": "Недоступные из России ресурсы и домены сервисов; без IP-подсетей"
     },
     {
+      "id": "itdog-google-ai",
+      "url": "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Services/google_ai.lst",
+      "format": "suffix-lines",
+      "min_entries": 20,
+      "max_bytes": 1048576,
+      "description": "Отдельный список Google AI, намеренно не входящий в Russia/inside",
+      "reference": "https://github.com/itdoginfo/allow-domains#%D1%80%D0%B5%D1%81%D1%83%D1%80%D1%81%D1%8B-%D0%BA%D0%BE%D1%82%D0%BE%D1%80%D1%8B%D1%85-%D0%BD%D0%B0%D0%BC%D0%B5%D1%80%D0%B5%D0%BD%D0%BD%D0%BE-%D0%BD%D0%B5%D1%82-%D0%B2-%D0%BE%D0%B1%D1%89%D0%B8%D1%85-%D1%81%D0%BF%D0%B8%D1%81%D0%BA%D0%B0%D1%85"
+    },
+    {
+      "id": "rkn",
+      "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/json/rkn.json",
+      "format": "singbox-domains",
+      "min_entries": 80000,
+      "max_bytes": 8388608,
+      "description": "Дополнительный доменный срез RKN от vernette/hoaxisr rulesets",
+      "reference": "https://github.com/hoaxisr/rulesets/blob/master/.github/workflows/upstream-sync.yml"
+    },
+    {
+      "id": "service-bungie",
+      "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/raw/bungie.txt",
+      "format": "suffix-lines",
+      "min_entries": 3,
+      "max_bytes": 1048576,
+      "description": "Домены и зависимости Bungie, включая PlayFab"
+    },
+    {
+      "id": "service-kinopub",
+      "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/raw/kinopub.txt",
+      "format": "suffix-lines",
+      "min_entries": 5,
+      "max_bytes": 1048576,
+      "description": "Домены, зеркала и CDN Kinopub"
+    },
+    {
+      "id": "service-gemini",
+      "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/raw/gemini.txt",
+      "format": "suffix-lines",
+      "min_entries": 5,
+      "max_bytes": 1048576,
+      "description": "Дополнительные зависимости Gemini"
+    },
+    {
+      "id": "service-tiktok",
+      "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/raw/tiktok.txt",
+      "format": "suffix-lines",
+      "min_entries": 5,
+      "max_bytes": 1048576,
+      "description": "Домены и CDN TikTok"
+    },
+    {
       "id": "unavailable",
       "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/json/unavailable-in-russia.json",
       "format": "singbox-domains",

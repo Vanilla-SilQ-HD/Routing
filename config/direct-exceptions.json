@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "description": "Приоритетные Direct-исключения для ложных и устаревших срабатываний. Для каждого правила нужны kind, domain, reason и review_after.",
+  "rules": []
+}

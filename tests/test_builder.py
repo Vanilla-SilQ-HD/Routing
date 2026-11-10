@@ -1,4 +1,5 @@
 import datetime as dt
+import ipaddress
 import json
 import random
 import sys
@@ -101,6 +102,20 @@ class InputFailureTests(unittest.TestCase):
         self.assertEqual(suffix, {"a.example", "b.example"})
         self.assertEqual(stats["duplicate_records"], 1)
 
+    def test_public_ips_are_separate_and_malformed_records_are_classified(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "mixed.data"
+            path.write_text("a.example\n1.1.1.1\n2606:4700:4700::1111\n10.0.0.1\n_bad.example\n1.1.1.1\n", encoding="utf-8")
+            networks = set()
+            exact, suffix, stats = build.parse_source(
+                path, {"id": "fixture", "format": "suffix-lines", "min_entries": 1}, 1, networks)
+        self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32", "2606:4700:4700::1111/128"})
+        self.assertEqual(suffix, {"a.example"})
+        self.assertEqual(stats["ip_records"], 3)
+        self.assertEqual(stats["ip_addresses"], 2)
+        self.assertEqual(stats["duplicate_records"], 0)
+        self.assertEqual(stats["invalid_by_reason"], {"non-public IP address": 1, "invalid DNS labels": 1})
+
     def test_tampered_offline_cache_is_refused_without_network(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
@@ -109,6 +124,48 @@ class InputFailureTests(unittest.TestCase):
             with patch("urllib.request.build_opener", side_effect=AssertionError("network not permitted")):
                 with self.assertRaises(build.BuildError):
                     build.fetch_source({"id": "fixture", "url": "https://example.com/data"}, path, offline=True)
+
+
+class ManualAndDiffTests(unittest.TestCase):
+    def test_manual_rules_require_reason_review_and_narrow_suffix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "manual.json"
+            psl = build.PublicSuffixes("com\n")
+            build.write_json(path, {"schema_version": 1, "rules": [
+                {"kind": "domain_suffix", "domain": "Example.COM", "reason": "reviewed service", "review_after": "2027-01-01"}
+            ]})
+            exact, suffix, records = build.read_manual_rules(path, psl, require_review=True)
+            self.assertFalse(exact)
+            self.assertEqual(set(suffix), {"example.com"})
+            self.assertEqual(records[0]["domain"], "example.com")
+            for rule in [
+                {"kind": "domain_suffix", "domain": "com", "reason": "too broad", "review_after": "2027-01-01"},
+                {"kind": "domain", "domain": "example.com", "reason": "missing review"},
+                {"kind": "domain", "domain": "example.com", "review_after": "2027-01-01"},
+            ]:
+                build.write_json(path, {"schema_version": 1, "rules": [rule]})
+                with self.subTest(rule=rule), self.assertRaises(build.BuildError):
+                    build.read_manual_rules(path, psl, require_review=True)
+
+    def test_semantic_diff_distinguishes_minimization_from_lost_coverage(self):
+        previous = {"version": 3, "rules": [{"domain": ["same.example", "old.other"],
+                                             "domain_suffix": ["child.example"]}]}
+        exact = {"same.example": 0, "new.example": 1}
+        suffix = {"example": 1}
+        diff = build.make_domain_diff(previous, exact, suffix, exact, suffix, [{"id": "manual"}])
+        self.assertEqual(diff["total_added"], 2)
+        self.assertEqual(diff["total_removed"], 2)
+        self.assertEqual(diff["effective_removed"], 1)
+        self.assertEqual(diff["effective_removed_sample"], ["old.other"])
+        self.assertEqual(diff["effective_added"], 2)
+
+    def test_registry_drift_uses_actual_addresses(self):
+        policy = {"validation": {"registry_ip": {"max_drop_fraction": .25, "max_growth_fraction": .5}}}
+        previous = {"registry_ip": {"output": {"prefixes": ["1.1.1.1/32", "8.8.8.8/32"]}}}
+        current = [ipaddress.ip_network(value) for value in ("1.1.1.1/32", "8.8.8.8/32", "9.9.9.9/32")]
+        self.assertEqual(build.validate_registry(previous, current, policy)["added"], 1)
+        with self.assertRaises(build.BuildError):
+            build.validate_registry(previous, [ipaddress.ip_network("1.1.1.1/32")], policy)
 
 
 class BaselineGuardTests(unittest.TestCase):

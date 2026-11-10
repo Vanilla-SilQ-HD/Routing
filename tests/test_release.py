@@ -9,7 +9,7 @@ import unittest
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from publish_release import (BUILD_FILES, RELEASE_FILES, CredentialSafeRedirect, PublishError,
+from publish_release import (BUILD_FILES, DATASETS, RELEASE_FILES, CredentialSafeRedirect, PublishError,
                              fingerprint, initial_baseline_allowed, json_bytes, parse_checksums, prepare_assets, publish,
                              sha256, verify_candidate)
 from build import validate_previous
@@ -65,6 +65,7 @@ class ReleaseTests(unittest.TestCase):
         self.candidate.mkdir()
         self.commit = "a" * 40
         recipe_files = {"config/tools-lock.json": json_bytes({"sing_box_version": "1.14.4", "source_format_version": 3}),
+                        "config/policy.json": json_bytes({"validation": {"max_service_stale_hours": 24}}),
                         "scripts/build.py": b"# fixture", "scripts/publish_release.py": b"# fixture",
                         "requirements.txt": b"", ".github/workflows/build.yml": b"# fixture"}
         for name, data in recipe_files.items():
@@ -73,26 +74,42 @@ class ReleaseTests(unittest.TestCase):
             path.write_bytes(data)
         for name in BUILD_FILES - {"manifest.json"}:
             (self.candidate / name).write_bytes(b"fixture " + name.encode())
+        compiler = {"version": "sing-box version 1.14.4", "source_format_version": 3,
+                    "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False}
         self.manifest = {
             "schema_version": 1, "built_at": "2026-11-06T12:00:00Z", "offline_replay": False,
             "environment": {"github_commit": self.commit},
             "configuration_sha256": {name: sha256(self.root / name) for name in recipe_files},
-            "compiler": {"version": "sing-box version 1.14.4", "source_format_version": 3,
-                         "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False},
+            "compiler": dict(compiler),
             "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": True, "dns_configuration_included": False},
+                      "ip_rules_included": True, "registry_ip_rules_included": True,
+                      "direct_exceptions_included": True, "dns_configuration_included": False},
             "output": {"total_conditions": 3, "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
                        "files": {name: sha256(self.candidate / name) for name in BUILD_FILES - {"manifest.json", "report.html"}}},
             "validation": {"baseline": "previous-successful-or-approved-manifest", "warnings": []},
+            "domain_diff": {"added": 0, "removed": 0},
             "service_networks": {
                 "sources": [{"id": "telegram", "url": "https://core.telegram.org/resources/cidr.txt"}],
                 "validation": {"baseline": "first-service-build", "warnings": []},
                 "output": {"total_prefixes": 2, "ipv4_prefixes": 1, "ipv6_prefixes": 1,
                            "ipv4_addresses": 16384, "ipv6_addresses": 2 ** 80,
                            "srs_bytes": (self.candidate / "blocked-services-ip.srs").stat().st_size},
-                "compiler": {"version": "sing-box version 1.14.4", "source_format_version": 3,
-                             "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False},
+                "compiler": dict(compiler),
+            },
+            "registry_ip": {
+                "sources": [{"id": "refilter", "ip_addresses": 1}],
+                "validation": {"baseline": "first-registry-build", "warnings": []},
+                "output": {"total_prefixes": 1, "ipv4_prefixes": 1, "ipv6_prefixes": 0,
+                           "prefixes": ["1.1.1.1/32"],
+                           "srs_bytes": (self.candidate / "blocked-registry-ip.srs").stat().st_size},
+                "compiler": dict(compiler),
+            },
+            "direct_exceptions": {
+                "rules": [],
+                "output": {"total_conditions": 0,
+                           "srs_bytes": (self.candidate / "routing-direct-exceptions.srs").stat().st_size},
+                "compiler": dict(compiler),
             },
         }
         self.write_manifest()
@@ -116,7 +133,7 @@ class ReleaseTests(unittest.TestCase):
             verify_candidate(self.candidate, self.root, self.commit)
 
     def test_corrupted_binary_fails_before_publication(self):
-        for name in ("blocked-domains.srs", "blocked-services-ip.srs"):
+        for name in (dataset + ".srs" for dataset in DATASETS):
             with self.subTest(name=name):
                 path = self.candidate / name
                 original = path.read_bytes()
@@ -166,6 +183,23 @@ class ReleaseTests(unittest.TestCase):
                 self.write_manifest()
                 with self.assertRaises(PublishError):
                     verify_candidate(self.candidate, self.root, self.commit)
+
+    def test_stale_service_fallback_requires_complete_evidence(self):
+        validation = self.manifest["service_networks"]["validation"]
+        validation.update({"baseline": "previous-service-data-stale",
+                           "restored_from_built_at": "2026-11-06T10:00:00+00:00",
+                           "stale_hours": 2, "fetch_errors": {"telegram": "timeout"}})
+        self.write_manifest()
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
+        validation["fetch_errors"] = {}
+        self.write_manifest()
+        with self.assertRaises(PublishError):
+            verify_candidate(self.candidate, self.root, self.commit)
+        validation["fetch_errors"] = {"telegram": "timeout"}
+        validation["stale_hours"] = 25
+        self.write_manifest()
+        with self.assertRaises(PublishError):
+            verify_candidate(self.candidate, self.root, self.commit)
 
     def test_first_build_can_publish_to_a_new_repository(self):
         self.manifest["validation"] = validate_previous(None, [], 3, {})
@@ -278,11 +312,11 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(github.events[-1], "publish")
         self.assertEqual(sum(e.startswith("download:") for e in github.events), len(RELEASE_FILES))
         self.assertIn("blocked-services-ip.srs", github.body)
-        self.assertIn("для DNS-правил используйте только доменный набор", github.body)
+        self.assertIn("Для DNS-правил используйте только доменный набор", github.body)
 
     def test_upload_or_verification_failure_keeps_previous_release(self):
         for failure in ("fail_upload", "corrupt_download"):
-            for name in ("blocked-domains.srs", "blocked-services-ip.srs"):
+            for name in (dataset + ".srs" for dataset in DATASETS):
                 with self.subTest(failure=failure, name=name):
                     old = {"assets": [], "tag_name": "previous"}
                     github = FakeGitHub(old)
@@ -312,7 +346,7 @@ class ReleaseTests(unittest.TestCase):
         self.publish_to(github)
         metadata_asset = next(a for a in github.existing["assets"] if a["name"] == "release.json")
         previous = copy.deepcopy(self.metadata)
-        previous["service_srs_sha256"] = "0" * 64
+        previous["dataset_srs_sha256"]["blocked-services-ip"] = "0" * 64
         github.stored[metadata_asset["id"]] = json_bytes(previous)
         with self.assertRaisesRegex(PublishError, "inconsistent binary metadata"):
             self.publish_to(github)

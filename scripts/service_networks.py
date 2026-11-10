@@ -170,3 +170,36 @@ def prepare_services(fetched, config, previous):
     validation = validate_previous_services(previous, stats, config["validation"])
     networks = normalize_networks(all_networks)
     return networks, {"sources": stats, "validation": validation, "output": coverage(networks)}
+
+
+def restore_services(previous, config, max_stale_hours, now=None):
+    if not previous or not isinstance(previous.get("service_networks"), dict):
+        raise ServiceNetworkError("Service download failed and no previous complete service set is available")
+    previous_services = previous["service_networks"]
+    built_at = dt.datetime.fromisoformat(previous["built_at"])
+    current_time = now or dt.datetime.now(dt.timezone.utc)
+    age = (current_time - built_at).total_seconds() / 3600
+    if not 0 <= age <= max_stale_hours:
+        raise ServiceNetworkError("Previous complete service set is too old for stale fallback")
+    old_sources = {source["id"]: source for source in previous_services.get("sources", [])}
+    if set(old_sources) != {source["id"] for source in config["sources"]}:
+        raise ServiceNetworkError("Service source composition changed; stale fallback is forbidden")
+    all_networks, stats = [], []
+    for source in config["sources"]:
+        old = old_sources[source["id"]]
+        if old.get("url") != source["url"]:
+            raise ServiceNetworkError("Service source URL changed; stale fallback is forbidden")
+        networks, _ = parse_networks(None, source, values=old["prefixes"])
+        all_networks.extend(networks)
+        stats.append(old)
+    networks = normalize_networks(all_networks)
+    return networks, {
+        "sources": stats,
+        "validation": {
+            "baseline": "previous-service-data-stale",
+            "warnings": [],
+            "restored_from_built_at": previous["built_at"],
+            "stale_hours": round(age, 2),
+        },
+        "output": coverage(networks),
+    }

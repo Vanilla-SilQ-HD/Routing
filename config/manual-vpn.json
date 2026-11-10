@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "description": "Ручные дополнения к VPN-базе. Для каждого правила нужны kind, domain и reason; public suffixes запрещены.",
+  "rules": []
+}

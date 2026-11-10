@@ -20,19 +20,14 @@ class PublishError(Exception):
     pass
 
 
-BUILD_FILES = {
-    "blocked-domains.srs", "blocked-domains.json", "blocked-domains.txt",
-    "blocked-services-ip.srs", "blocked-services-ip.json", "blocked-services-ip.txt",
-    "manifest.json", "excluded.json", "probes.json", "report.html",
-}
-RELEASE_FILES = {
-    "blocked-domains.srs", "blocked-domains.srs.sha256", "blocked-domains.json.gz",
-    "blocked-services-ip.srs", "blocked-services-ip.srs.sha256", "blocked-services-ip.json.gz",
-    "manifest.json", "excluded.json", "probes.json", "report.html", "release.json",
-    "SHA256SUMS",
-}
+DATASETS = ("blocked-domains", "blocked-services-ip", "blocked-registry-ip", "routing-direct-exceptions")
+BUILD_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".json", ".txt")}
+BUILD_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
+                "manual-rules.json", "report.html"}
+RELEASE_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".srs.sha256", ".json.gz")}
+RELEASE_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
+                  "manual-rules.json", "report.html", "release.json", "SHA256SUMS"}
 MAX_ASSET_BYTES = 128 * 1024 * 1024
-DATASETS = ("blocked-domains", "blocked-services-ip")
 
 
 def sha256(path):
@@ -96,7 +91,8 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     scope = manifest["scope"]
     expected_scope = {"domains_only": False, "personal_rules_included": False, "router_access": False,
                       "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": True, "dns_configuration_included": False}
+                      "ip_rules_included": True, "registry_ip_rules_included": True,
+                      "direct_exceptions_included": True, "dns_configuration_included": False}
     if scope != expected_scope:
         raise PublishError("Unexpected routing scope")
     output = manifest["output"]
@@ -120,9 +116,34 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     verify_compiler(service.get("compiler"), lock)
     service_validation = service.get("validation", {})
     if (not isinstance(service_validation, dict)
-            or service_validation.get("baseline") not in {"first-service-build", "previous-service-build"}
+            or service_validation.get("baseline") not in {"first-service-build", "previous-service-build", "previous-service-data-stale"}
             or service_validation.get("warnings") != []):
         raise PublishError("Service networks have an unknown baseline or unresolved validation warnings")
+    if service_validation["baseline"] == "previous-service-data-stale":
+        policy = json.loads((root / "config/policy.json").read_text(encoding="utf-8"))
+        if (not service_validation.get("fetch_errors") or not service_validation.get("restored_from_built_at")
+                or not 0 <= service_validation.get("stale_hours", -1) <= policy["validation"]["max_service_stale_hours"]):
+            raise PublishError("Stale service fallback is missing its evidence or exceeds the time limit")
+    registry = manifest.get("registry_ip")
+    if not isinstance(registry, dict):
+        raise PublishError("Registry IP evidence is missing")
+    registry_output = registry.get("output", {})
+    if (any(type(registry_output.get(key)) is not int for key in ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "srs_bytes"))
+            or registry_output["total_prefixes"] < 1
+            or registry_output["total_prefixes"] != registry_output["ipv4_prefixes"] + registry_output["ipv6_prefixes"]
+            or len(registry_output.get("prefixes", [])) != registry_output["total_prefixes"]
+            or registry_output["srs_bytes"] != (directory / "blocked-registry-ip.srs").stat().st_size):
+        raise PublishError("Unexpected registry IP counts or binary size")
+    verify_compiler(registry.get("compiler"), lock)
+    if (registry.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
+            or registry["validation"].get("warnings") != []):
+        raise PublishError("Registry IP has an unknown baseline or unresolved validation warnings")
+    direct = manifest.get("direct_exceptions")
+    if (not isinstance(direct, dict) or type(direct.get("output", {}).get("total_conditions")) is not int
+            or direct["output"]["total_conditions"] < 0
+            or direct["output"].get("srs_bytes") != (directory / "routing-direct-exceptions.srs").stat().st_size):
+        raise PublishError("Unexpected Direct exception output")
+    verify_compiler(direct.get("compiler"), lock)
     validation = manifest["validation"]
     if validation["baseline"] == "first-build":
         expected = ["First build has no previous published version to compare."]
@@ -143,7 +164,7 @@ def fingerprint(manifest):
 
 def prepare_assets(candidate, destination, manifest, repository, run_id, attempt):
     destination.mkdir(parents=True, exist_ok=False)
-    for name in ("manifest.json", "excluded.json", "probes.json", "report.html"):
+    for name in ("manifest.json", "excluded.json", "probes.json", "domain-changes.json", "manual-rules.json", "report.html"):
         shutil.copyfile(candidate / name, destination / name)
     for name in DATASETS:
         shutil.copyfile(candidate / (name + ".srs"), destination / (name + ".srs"))
@@ -156,6 +177,7 @@ def prepare_assets(candidate, destination, manifest, repository, run_id, attempt
     digest = manifest["output"]["files"]["blocked-domains.srs"]
     metadata = {"schema_version": 1, "fingerprint": fingerprint(manifest), "srs_sha256": digest,
                 "service_srs_sha256": manifest["output"]["files"]["blocked-services-ip.srs"],
+                "dataset_srs_sha256": {name: manifest["output"]["files"][name + ".srs"] for name in DATASETS},
                 "github_commit": manifest["environment"]["github_commit"], "built_at": manifest["built_at"],
                 "run_url": f"https://github.com/{repository}/actions/runs/{run_id}/attempts/{attempt}"}
     (destination / "release.json").write_bytes(json_bytes(metadata))
@@ -235,30 +257,33 @@ def publish(assets, manifest, metadata, github, tag):
             if previous.get("fingerprint") == metadata["fingerprint"]:
                 if set(inventory) != RELEASE_FILES or len(latest["assets"]) != len(RELEASE_FILES):
                     raise PublishError("Unchanged release has an incomplete asset inventory")
-                for name, key in (("blocked-domains", "srs_sha256"), ("blocked-services-ip", "service_srs_sha256")):
-                    if previous.get(key) != metadata[key]:
+                for name in DATASETS:
+                    expected_hash = metadata["dataset_srs_sha256"][name]
+                    if previous.get("dataset_srs_sha256", {}).get(name) != expected_hash:
                         raise PublishError("Unchanged release has inconsistent binary metadata")
                     binary = github.download(inventory[name + ".srs"])
                     checksum = github.download(inventory[name + ".srs.sha256"], limit=1024)
-                    if (hashlib.sha256(binary).hexdigest() != metadata[key]
+                    if (hashlib.sha256(binary).hexdigest() != expected_hash
                             or checksum != (assets / (name + ".srs.sha256")).read_bytes()):
                         raise PublishError(f"Unchanged release failed binary integrity verification: {name}")
                 return {"status": "unchanged", "release_url": latest["html_url"], "tag": latest["tag_name"]}
     stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-domains.srs"
     service_stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-services-ip.srs"
-    body = (f"Автоматические наборы для выборочного VPN: домены и выделенные сети приложений.\n\n"
+    registry_stable = f"https://github.com/{github.repository}/releases/latest/download/blocked-registry-ip.srs"
+    direct_stable = f"https://github.com/{github.repository}/releases/latest/download/routing-direct-exceptions.srs"
+    body = (f"Автоматические наборы для выборочного VPN: домены, сервисные сети, точные IP и Direct-исключения.\n\n"
             f"Доменных условий: **{manifest['output']['total_conditions']:,}**; "
-            f"IP-префиксов сервисов: **{manifest['service_networks']['output']['total_prefixes']:,}**. "
+            f"IP-префиксов сервисов: **{manifest['service_networks']['output']['total_prefixes']:,}**; "
+            f"точных IP из блок-листов: **{manifest['registry_ip']['output']['total_prefixes']:,}**. "
             f"sing-box: `{manifest['compiler']['version']}`.\n\n"
-            f"[Домены .srs]({stable}) · [IP-сети приложений .srs]({service_stable}) · [Проверенная сборка]({metadata['run_url']})\n\n"
+            f"[Домены]({stable}) · [Сети приложений]({service_stable}) · [Точные IP]({registry_stable}) · "
+            f"[Direct-исключения]({direct_stable}) · [Проверенная сборка]({metadata['run_url']})\n\n"
             f"SHA-256 доменов: `{metadata['srs_sha256']}`\n\n"
             f"SHA-256 IP-сетей: `{metadata['service_srs_sha256']}`\n\n"
-            "Исходники опубликованы в `blocked-domains.json.gz` и `blocked-services-ip.json.gz`; происхождение и проверки — в `manifest.json`. "
-            "Контрольные суммы всех вложений — в `SHA256SUMS`.\n\n"
-            "Состав определяется публичными источниками и политикой репозитория. "
-            "IP-набор покрывает приложения, подключающиеся без доменного имени. "
-            "В маршрутизации используются оба набора; для DNS-правил используйте только доменный набор. "
-            "Маршруты и DNS задаются в конфигурации sing-box.")
+            "Исходники всех наборов опубликованы в `.json.gz`; происхождение и проверки — в `manifest.json`, "
+            "доменные добавления и удаления — в `domain-changes.json`. Контрольные суммы — в `SHA256SUMS`.\n\n"
+            "Direct-исключения ставятся выше VPN-правила; три VPN-набора используются в маршрутизации. "
+            "Для DNS-правил используйте только доменный набор. Маршруты и DNS задаются в конфигурации sing-box.")
     release = github.create_draft(tag, manifest["environment"]["github_commit"],
                                   "Routing · " + manifest["built_at"], body)
     if release.get("draft") is not True:
