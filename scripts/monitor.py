@@ -62,6 +62,12 @@ def classify_result(result):
     nested = result.get("result", {})
     status_code = result.get("statusCode", nested.get("statusCode"))
     status = result.get("status", nested.get("status", "unknown"))
+    headers = result.get("headers", nested.get("headers", {}))
+    location = headers.get("location", headers.get("Location", ""))
+    raw_output = str(nested.get("rawOutput", result.get("rawOutput", ""))).lower()
+    if "unavailable-in-region" in str(location).lower() or (
+            "location:" in raw_output and "unavailable-in-region" in raw_output):
+        return "blocked_or_geo"
     if isinstance(status_code, int) and 200 <= status_code < 400:
         return "works_direct"
     if status_code in {401, 403, 451}:
