@@ -133,6 +133,15 @@ jobs:
           path: incoming
       - name: Run limited availability checks
         run: python scripts/monitor.py --output incoming/dist/monitoring.json --html incoming/dist/monitoring.html
+      - name: Save monitoring report for Pages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: routing-monitoring
+          path: |
+            incoming/dist/monitoring.json
+            incoming/dist/monitoring.html
+          if-no-files-found: error
+          retention-days: 2
 
   pages:
     name: Publish Routing Dashboard
@@ -153,6 +162,11 @@ jobs:
         with:
           name: selective-vpn-rules
           path: incoming
+      - name: Download the monitoring report from this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: routing-monitoring
+          path: incoming/dist
       - name: Prepare the static site
         run: |
           mkdir _site
