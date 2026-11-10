@@ -43,15 +43,19 @@ class BaselineArtifactTests(unittest.TestCase):
         with patch("load_baseline.urllib.request.build_opener") as factory:
             response = factory.return_value.open.return_value.__enter__.return_value
             response.read.return_value = b"{}"
-            get("https://api.github.com/repos/owner/Routing/releases/assets/7", "token", as_json=False)
-            request = factory.return_value.open.call_args.args[0]
-        self.assertEqual(request.get_header("Accept"), "application/octet-stream")
+            get("https://api.github.com/repos/owner/Routing/releases/assets/7", "token",
+                as_json=False, octet_stream=True)
+            asset_request = factory.return_value.open.call_args.args[0]
+            get("https://api.github.com/repos/owner/Routing/actions/artifacts/7/zip", "token", as_json=False)
+            artifact_request = factory.return_value.open.call_args.args[0]
+        self.assertEqual(asset_request.get_header("Accept"), "application/octet-stream")
+        self.assertEqual(artifact_request.get_header("Accept"), "application/vnd.github+json")
 
     def test_previous_rules_are_restored_from_the_latest_release(self):
         rules = b'{"version":3,"rules":[{"domain":["example.com"]}]}\n'
         payload = gzip.compress(rules, mtime=0)
         latest = {"tag_name": "rules-1-1", "assets": [{"id": 7, "name": "blocked-domains.json.gz"}]}
-        def fake_get(url, token, as_json=True, limit=0):
+        def fake_get(url, token, as_json=True, limit=0, octet_stream=False):
             return latest if as_json else payload
         with tempfile.TemporaryDirectory() as temporary:
             previous_cwd = os.getcwd()

@@ -25,12 +25,12 @@ class CredentialSafeRedirect(HTTPSRedirect):
         return redirected
 
 
-def get(url, token, as_json=True, limit=4 * 1024 * 1024):
+def get(url, token, as_json=True, limit=4 * 1024 * 1024, octet_stream=False):
     if urllib.parse.urlsplit(url).hostname != "api.github.com":
         raise BuildError("Credentials may only be sent to api.github.com")
     request = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + token, "User-Agent": "selective-vpn-rules/1",
-        "Accept": "application/vnd.github+json" if as_json else "application/octet-stream",
+        "Accept": "application/octet-stream" if octet_stream else "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     })
     opener = urllib.request.build_opener(CredentialSafeRedirect())
@@ -61,7 +61,7 @@ def restore_latest_rules(base, token):
     if asset is None:
         return
     payload = get(base + f"/releases/assets/{int(asset['id'])}", token,
-                  as_json=False, limit=128 * 1024 * 1024)
+                  as_json=False, limit=128 * 1024 * 1024, octet_stream=True)
     with gzip.GzipFile(fileobj=io.BytesIO(payload)) as compressed:
         rules = compressed.read(512 * 1024 * 1024 + 1)
     if len(rules) > 512 * 1024 * 1024:
