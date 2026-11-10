@@ -1,63 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
-  <title id="title">Routing — выборочная маршрутизация</title>
-  <desc id="desc">Одиннадцать источников формируют четыре набора правил. Недоступные ресурсы идут через VPN, остальные напрямую.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">Routing — точная маршрутизация трафика</title>
+  <desc id="desc">Недоступные ресурсы направляются через VPN, остальные — напрямую. Одиннадцать источников и четыре набора правил.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#111a2e"/>
-      <stop offset="1" stop-color="#07111f"/>
-    </linearGradient>
-    <linearGradient id="route" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#60a5fa"/>
-      <stop offset="1" stop-color="#34d399"/>
-    </linearGradient>
-    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="10" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <style>
-      .title{font:700 54px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#f4f8ff;letter-spacing:5px}
-      .subtitle{font:400 21px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#9eb1cc}
-      .label{font:600 16px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#e6eefb}
-      .small{font:400 14px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#8ea6c4}
-      .node{fill:#13243b;stroke:#2b4566;stroke-width:1.5}
-      .vpn{fill:#34d399}.direct{fill:#60a5fa}
+      .overline{font:600 12px system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:2.6px;fill:#7890ad}
+      .brand{font:650 54px system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:4px;fill:#f1f6fd}
+      .subtitle{font:400 21px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#a8bad0}
+      .stats{font:400 16px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#8fa6c0}
+      .card-label{font:600 12px system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:1.2px}
+      .card-value{font:650 30px system-ui,-apple-system,"Segoe UI",sans-serif}
+      .card-note{font:400 14px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#8fa6c0}
     </style>
   </defs>
-  <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
-  <path d="M0 245H1200" stroke="#1c314d"/>
-  <circle cx="1080" cy="30" r="170" fill="#123457" opacity=".32"/>
-  <circle cx="780" cy="310" r="170" fill="#0d5a4b" opacity=".16"/>
-  <g transform="translate(58 58)">
-    <rect x="0" y="0" width="52" height="52" rx="14" fill="url(#route)" filter="url(#glow)"/>
-    <path d="M13 17h25M13 27h17M13 37h25" stroke="#07111f" stroke-width="4" stroke-linecap="round"/>
-    <text x="72" y="42" class="title">ROUTING</text>
-    <text x="2" y="96" class="subtitle">Точная маршрутизация без лишнего VPN</text>
-    <text x="2" y="139" class="small">11 источников  ·  4 набора  ·  автообновление 4 раза в сутки</text>
-    <g transform="translate(0 178)">
-      <rect width="170" height="34" rx="17" fill="#12352f" stroke="#246554"/>
-      <circle cx="18" cy="17" r="5" class="vpn"/>
-      <text x="33" y="22" class="small" fill="#b9f4df">Только нужное — VPN</text>
-      <rect x="184" width="190" height="34" rx="17" fill="#132c48" stroke="#315c86"/>
-      <circle cx="202" cy="17" r="5" class="direct"/>
-      <text x="217" y="22" class="small" fill="#c5e0ff">Остальное — Direct</text>
-    </g>
+  <rect x="1" y="1" width="1198" height="278" rx="20" fill="#0c1525" stroke="#26374e"/>
+  <path d="M20 1H198" stroke="#42caa0" stroke-width="3"/>
+  <g transform="translate(64 44)">
+    <text x="0" y="0" class="overline">SELECTIVE TRAFFIC CONTROL</text>
+    <rect x="0" y="28" width="46" height="46" rx="12" fill="#183149"/>
+    <path d="M13 42h20M13 51h14M13 60h20" fill="none" stroke="#68dbc0" stroke-width="3" stroke-linecap="round"/>
+    <text x="66" y="71" class="brand">ROUTING</text>
+    <text x="0" y="113" class="subtitle">Точная маршрутизация без лишнего VPN</text>
+    <text x="0" y="177" class="stats">11 источников  ·  4 набора  ·  обновление 4 раза в сутки</text>
   </g>
-  <g transform="translate(625 55)">
-    <path d="M86 95H190M268 95H305M383 72H445M383 118H445" stroke="#3b5b7d" stroke-width="2"/>
-    <path d="M190 82l12 13-12 13M433 59l12 13-12 13M433 105l12 13-12 13" fill="none" stroke="#5e83aa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="0" y="61" width="88" height="68" rx="16" class="node"/>
-    <text x="44" y="90" text-anchor="middle" class="label">11</text>
-    <text x="44" y="112" text-anchor="middle" class="small">источников</text>
-    <rect x="190" y="61" width="80" height="68" rx="16" class="node"/>
-    <text x="230" y="90" text-anchor="middle" class="label">4</text>
-    <text x="230" y="112" text-anchor="middle" class="small">набора</text>
-    <rect x="305" y="61" width="80" height="68" rx="16" class="node"/>
-    <text x="345" y="90" text-anchor="middle" class="label">SRS</text>
-    <text x="345" y="112" text-anchor="middle" class="small">sing-box</text>
-    <rect x="445" y="28" width="110" height="56" rx="16" fill="#12352f" stroke="#246554"/>
-    <text x="500" y="62" text-anchor="middle" class="label" fill="#b9f4df">VPN</text>
-    <rect x="445" y="112" width="110" height="56" rx="16" fill="#132c48" stroke="#315c86"/>
-    <text x="500" y="146" text-anchor="middle" class="label" fill="#c5e0ff">Direct</text>
-    <text x="0" y="165" class="small">домены · сети · IP · исключения</text>
+  <g transform="translate(700 68)">
+    <rect width="200" height="104" rx="14" fill="#102c29" stroke="#28574e"/>
+    <circle cx="22" cy="23" r="4" fill="#48d3a7"/>
+    <text x="34" y="27" class="card-label" fill="#8ee2c8">НЕДОСТУПНОЕ</text>
+    <text x="20" y="66" class="card-value" fill="#d8f8ec">VPN</text>
+    <text x="20" y="89" class="card-note">только нужные ресурсы</text>
+    <rect x="230" width="200" height="104" rx="14" fill="#12283f" stroke="#315574"/>
+    <circle cx="252" cy="23" r="4" fill="#6fb6fa"/>
+    <text x="264" y="27" class="card-label" fill="#a4cef7">ОСТАЛЬНОЕ</text>
+    <text x="250" y="66" class="card-value" fill="#e0efff">Direct</text>
+    <text x="250" y="89" class="card-note">без изменений</text>
+    <text x="0" y="153" class="stats">домены  ·  сети  ·  IP  ·  исключения</text>
   </g>
 </svg>
