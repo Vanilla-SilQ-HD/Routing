@@ -193,6 +193,19 @@ class ManualAndDiffTests(unittest.TestCase):
         with self.assertRaises(build.BuildError):
             build.validate_registry(previous, [ipaddress.ip_network("1.1.1.1/32")], policy)
 
+    def test_only_the_legacy_registry_layout_gets_a_new_baseline(self):
+        policy = {"validation": {"registry_ip": {"max_drop_fraction": .25, "max_growth_fraction": .5}}}
+        previous = {"registry_cidr": None, "registry_ip": {
+            "sources": [{"id": "antifilter-full"}, {"id": "refilter"}],
+            "output": {"prefixes": ["1.1.1.1/32"]},
+        }}
+        current = [ipaddress.ip_network(f"10.{index}.0.1/32") for index in range(100)]
+        result = build.validate_registry(previous, current, policy)
+        self.assertEqual(result["baseline"], "first-registry-build")
+        previous["registry_ip"]["sources"].append({"id": "antifilter-ipresolve"})
+        with self.assertRaises(build.BuildError):
+            build.validate_registry(previous, current, policy)
+
 
 class BaselineGuardTests(unittest.TestCase):
     def setUp(self):

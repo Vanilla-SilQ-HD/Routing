@@ -419,6 +419,9 @@ def validate_registry(previous, networks, policy, now=None, section="registry_ip
     registry = previous.get(section) if previous else None
     if not registry:
         return {"baseline": "first-registry-build", "warnings": []}
+    source_ids = {source.get("id") for source in registry.get("sources", [])}
+    if section == "registry_ip" and previous.get("registry_cidr") is None and source_ids == {"antifilter-full", "refilter"}:
+        return {"baseline": "first-registry-build", "warnings": []}
     old = set(registry["output"]["prefixes"])
     removed, added = old - current, current - old
     limits = policy["validation"]["registry_ip"]
