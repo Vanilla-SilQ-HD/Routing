@@ -249,7 +249,11 @@ class GitHub:
             payload = response.read(limit + 1)
         if len(payload) > limit:
             raise PublishError("GitHub response exceeds size limit")
-        return payload if binary else json.loads(payload)
+        if binary:
+            return payload
+        if not payload:
+            return None
+        return json.loads(payload)
 
     def latest(self):
         try:
@@ -258,6 +262,23 @@ class GitHub:
             if exc.code == 404:
                 return None
             raise
+
+    def list_all_releases(self):
+        releases = []
+        page = 1
+        while True:
+            batch = self.request("GET", self.base + f"/releases?per_page=100&page={page}")
+            if not isinstance(batch, list):
+                raise PublishError("Unexpected releases listing response")
+            releases.extend(batch)
+            if len(batch) < 100:
+                return releases
+            page += 1
+
+    def delete_release(self, release_id):
+        self.request("DELETE", self.base + f"/releases/{int(release_id)}")
+        return True
+
 
     def create_draft(self, tag, commit, title, body):
         return self.request("POST", self.base + "/releases", json_bytes({
@@ -423,6 +444,12 @@ def main():
     manifest = verify_candidate(candidate, Path.cwd(), commit, allow_initial_baseline=allow_initial)
     if manifest["validation"]["baseline"] == "first-build":
         print("Initial baseline accepted: first release or explicitly requested manual reset.", flush=True)
+
+    # Retention/cleanup of old releases is intentionally NOT part of the publish path:
+    # published releases are kept as immutable baselines (see docs/BUILD.md).
+    # A separate, explicitly invoked retention command may be added later with
+    # --dry-run by default and protection for the Latest release.
+
     metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt)
     result = publish(assets, manifest, metadata, github, f"rules-{run_id}-{attempt}")
     print(json.dumps(result), flush=True)
@@ -433,9 +460,38 @@ def main():
             stream.write(f"Service IP SRS SHA-256: `{metadata['service_srs_sha256']}`\n")
 
 
+def retention_main():
+    parser = argparse.ArgumentParser(description="Delete old GitHub releases, keeping the newest N and always protecting Latest. Dry-run unless --apply is passed.")
+    parser.add_argument("--keep", type=int, default=5, help="How many newest published releases to keep (default: 5)")
+    parser.add_argument("--apply", action="store_true", help="Actually delete releases; without it only prints what would be deleted")
+    args = parser.parse_args()
+    if args.keep < 1:
+        raise PublishError("--keep must be >= 1")
+    repository = os.environ["GITHUB_REPOSITORY"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise PublishError("Invalid repository")
+    github = GitHub(repository, os.environ["GITHUB_TOKEN"])
+    latest = github.latest()
+    protected_ids = {latest["id"]} if latest else set()
+    releases = [r for r in github.list_all_releases() if not r.get("draft") and r["id"] not in protected_ids]
+    releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+    to_delete = releases[args.keep:]
+    for release in to_delete:
+        action = "deleting" if args.apply else "would delete"
+        print(f"{action}: {release['tag_name']} (id={release['id']}, published_at={release.get('published_at')})", flush=True)
+        if args.apply:
+            github.delete_release(release["id"])
+    print(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0,
+                      "would_delete": len(to_delete), "kept": min(args.keep, len(releases)) + len(protected_ids)}), flush=True)
+
+
 if __name__ == "__main__":
     try:
-        main()
+        if len(sys.argv) > 1 and sys.argv[1] == "retention":
+            sys.argv.pop(1)
+            retention_main()
+        else:
+            main()
     except (PublishError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
         print(f"PUBLICATION FAILED: {exc}", file=sys.stderr)
         raise SystemExit(1)
