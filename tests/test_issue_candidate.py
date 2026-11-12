@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from issue_candidate import candidate_from_issue, markdown
@@ -43,6 +44,24 @@ class IssueCandidateTests(unittest.TestCase):
         self.assertEqual(candidate["kind"], "ip_cidr")
         self.assertNotIn("config/manual-vpn.json", markdown(candidate, issue))
         self.assertIn("ручной проверки", markdown(candidate, issue))
+    def test_main_writes_candidate_and_markdown(self):
+        import json
+        import tempfile
+
+        from issue_candidate import main
+        event = {"issue": {"number": 11, "title": "Unrouted", "html_url": "https://example.com/issues/11",
+                           "body": "### Resource\nexample.org\n\n### Expected\nVPN\n\n### Actual\nDirect"}}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "event.json").write_text(json.dumps(event), encoding="utf-8")
+            with patch.object(sys, "argv", ["issue_candidate.py", "--event", str(root / "event.json"),
+                                            "--output", str(root / "candidate.json"),
+                                            "--markdown", str(root / "candidate.md")]):
+                main()
+            candidate = json.loads((root / "candidate.json").read_text(encoding="utf-8"))
+            self.assertEqual(candidate["kind"], "domain")
+            self.assertEqual(candidate["domain"], "example.org")
+            self.assertIn("config/manual-vpn.json", (root / "candidate.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
