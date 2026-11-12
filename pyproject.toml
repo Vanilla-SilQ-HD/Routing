@@ -11,3 +11,11 @@ ignore = ["E501", "RUF012", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["build", "report", "service_networks"]
+
+[tool.coverage.run]
+branch = true
+source = ["scripts"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ["if __name__ == .__main__.:", "if TYPE_CHECKING:"]

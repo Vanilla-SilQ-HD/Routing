@@ -8,3 +8,6 @@ release/
 __pycache__/
 *.pyc
 *.zip
+.coverage
+coverage.xml
+htmlcov/
