@@ -6,9 +6,9 @@ import datetime as dt
 import ipaddress
 import json
 import os
-from pathlib import Path
 import re
 import urllib.request
+from pathlib import Path
 
 from build import normalize_domain, write_json
 
@@ -27,7 +27,7 @@ def expected_route(issue):
     expected = fields.get("ожидаемый маршрут", fields.get("expected", "")).strip().lower()
     actual = fields.get("фактический маршрут", fields.get("actual", "")).strip().lower()
     expected = expected or "vpn"
-    if expected not in {"vpn", "direct"} or actual and actual not in {"vpn", "direct"}:
+    if expected not in {"vpn", "direct"} or (actual and actual not in {"vpn", "direct"}):
         raise ValueError("Expected and actual routes must be VPN or Direct")
     if actual and expected == actual:
         raise ValueError("Expected and actual routes must differ")
@@ -48,7 +48,7 @@ def candidate_from_issue(issue):
         kind, domain = "ip_cidr", str(network)
     else:
         kind, domain = "domain", normalize_domain(resource)
-    review_after = (dt.datetime.now(dt.timezone.utc).date() + dt.timedelta(days=30)).isoformat()
+    review_after = (dt.datetime.now(dt.UTC).date() + dt.timedelta(days=30)).isoformat()
     reason = f"Issue #{issue['number']}: {issue.get('title', 'unrouted resource')}. {issue['html_url']}"
     return {"kind": kind, "domain": domain, "reason": reason, "review_after": review_after}
 

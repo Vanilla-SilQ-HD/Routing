@@ -6,17 +6,17 @@ import datetime as dt
 import html
 import json
 import os
-from pathlib import Path
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 USER_AGENT = "Routing-Monitor/1 (public availability checks)"
 
 
 def utc_now():
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
 def request_json(url, *, payload=None, timeout=30):

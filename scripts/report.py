@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 
-
 DATASETS = (
     ("blocked-domains", "Домены · Full", "Полная база для маршрутизации и DNS"),
     ("blocked-domains-core", "Домены · Compact", "Компактная база для слабых устройств"),

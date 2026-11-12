@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import sys
@@ -14,6 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from pathlib import Path
 
 
 class PublishError(Exception):
@@ -408,16 +408,26 @@ def publish(assets, manifest, metadata, github, tag):
                                   "Routing · " + manifest["built_at"], body)
     if release.get("draft") is not True:
         raise PublishError("GitHub did not create a draft; refusing asset upload")
-    for path in sorted(assets.iterdir()):
-        asset = github.upload(release["id"], path)
-        if asset["state"] != "uploaded" or asset["size"] != path.stat().st_size or asset["name"] != path.name:
-            raise PublishError(f"Incomplete asset upload: {path.name}")
-        digest = sha256(path)
-        if asset.get("digest") and asset["digest"] != "sha256:" + digest:
-            raise PublishError(f"GitHub asset digest mismatch: {path.name}")
-        # Verify actual stored bytes, even when GitHub does not return a digest.
-        if hashlib.sha256(github.download(asset)).hexdigest() != digest:
-            raise PublishError(f"Downloaded draft asset differs: {path.name}")
+    try:
+        for path in sorted(assets.iterdir()):
+            asset = github.upload(release["id"], path)
+            if asset["state"] != "uploaded" or asset["size"] != path.stat().st_size or asset["name"] != path.name:
+                raise PublishError(f"Incomplete asset upload: {path.name}")
+            digest = sha256(path)
+            if asset.get("digest") and asset["digest"] != "sha256:" + digest:
+                raise PublishError(f"GitHub asset digest mismatch: {path.name}")
+            # Verify actual stored bytes, even when GitHub does not return a digest.
+            if hashlib.sha256(github.download(asset)).hexdigest() != digest:
+                raise PublishError(f"Downloaded draft asset differs: {path.name}")
+    except Exception:
+        # Roll back the unpublished draft so a failed upload leaves no partial release.
+        # Publish errors are excluded: after a successful publish the release is no
+        # longer a draft and must never be deleted by the rollback path.
+        try:
+            github.delete_release(release["id"])
+        except Exception as cleanup_error:
+            print(f"Warning: draft rollback failed for release {release['id']}: {cleanup_error}", file=sys.stderr)
+        raise
     published = github.publish(release["id"])
     if published["draft"] or published["prerelease"]:
         raise PublishError("Release was not published as a stable version")
@@ -428,6 +438,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default="incoming/dist")
     parser.add_argument("--output", default="release")
+    parser.add_argument("--root", default=".", help="Checkout root used to verify the artifact recipe")
     args = parser.parse_args()
     if os.environ.get("GITHUB_REF") != "refs/heads/main" or os.environ.get("GITHUB_EVENT_NAME") not in {"push", "schedule", "workflow_dispatch"}:
         raise PublishError("Publication is restricted to trusted main-branch workflows")
@@ -441,7 +452,7 @@ def main():
     github = GitHub(repository, os.environ["GITHUB_TOKEN"])
     allow_initial = initial_baseline_allowed(github.latest(),
         os.environ.get("RESET_BASELINE", "false").lower() == "true", os.environ["GITHUB_EVENT_NAME"])
-    manifest = verify_candidate(candidate, Path.cwd(), commit, allow_initial_baseline=allow_initial)
+    manifest = verify_candidate(candidate, Path(args.root).resolve(), commit, allow_initial_baseline=allow_initial)
     if manifest["validation"]["baseline"] == "first-build":
         print("Initial baseline accepted: first release or explicitly requested manual reset.", flush=True)
 
@@ -460,6 +471,12 @@ def main():
             stream.write(f"Service IP SRS SHA-256: `{metadata['service_srs_sha256']}`\n")
 
 
+def releases_to_prune(releases, latest_id, keep):
+    candidates = [r for r in releases if not r.get("draft") and r["id"] != latest_id]
+    candidates.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+    return candidates[keep:]
+
+
 def retention_main():
     parser = argparse.ArgumentParser(description="Delete old GitHub releases, keeping the newest N and always protecting Latest. Dry-run unless --apply is passed.")
     parser.add_argument("--keep", type=int, default=5, help="How many newest published releases to keep (default: 5)")
@@ -472,17 +489,14 @@ def retention_main():
         raise PublishError("Invalid repository")
     github = GitHub(repository, os.environ["GITHUB_TOKEN"])
     latest = github.latest()
-    protected_ids = {latest["id"]} if latest else set()
-    releases = [r for r in github.list_all_releases() if not r.get("draft") and r["id"] not in protected_ids]
-    releases.sort(key=lambda r: r.get("published_at") or "", reverse=True)
-    to_delete = releases[args.keep:]
+    to_delete = releases_to_prune(github.list_all_releases(), latest["id"] if latest else None, args.keep)
     for release in to_delete:
         action = "deleting" if args.apply else "would delete"
         print(f"{action}: {release['tag_name']} (id={release['id']}, published_at={release.get('published_at')})", flush=True)
         if args.apply:
             github.delete_release(release["id"])
     print(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0,
-                      "would_delete": len(to_delete), "kept": min(args.keep, len(releases)) + len(protected_ids)}), flush=True)
+                      "would_delete": len(to_delete)}), flush=True)
 
 
 if __name__ == "__main__":

@@ -107,7 +107,7 @@ class InputFailureTests(unittest.TestCase):
             path = Path(temporary) / "mixed.data"
             path.write_text("a.example\n1.1.1.1\n2606:4700:4700::1111\n10.0.0.1\n_bad.example\n1.1.1.1\n", encoding="utf-8")
             networks = set()
-            exact, suffix, stats = build.parse_source(
+            _exact, suffix, stats = build.parse_source(
                 path, {"id": "fixture", "format": "suffix-lines", "min_entries": 1}, 1, networks)
         self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32", "2606:4700:4700::1111/128"})
         self.assertEqual(suffix, {"a.example"})
@@ -121,9 +121,8 @@ class InputFailureTests(unittest.TestCase):
             path = Path(temporary)
             (path / "fixture.data").write_bytes(b"tampered")
             build.write_json(path / "fixture.metadata.json", {"url": "https://example.com/data", "sha256": "0" * 64})
-            with patch("urllib.request.build_opener", side_effect=AssertionError("network not permitted")):
-                with self.assertRaises(build.BuildError):
-                    build.fetch_source({"id": "fixture", "url": "https://example.com/data"}, path, offline=True)
+            with patch("urllib.request.build_opener", side_effect=AssertionError("network not permitted")), self.assertRaises(build.BuildError):
+                build.fetch_source({"id": "fixture", "url": "https://example.com/data"}, path, offline=True)
 
 
 class ManualAndDiffTests(unittest.TestCase):
@@ -223,7 +222,7 @@ class ManualAndDiffTests(unittest.TestCase):
 
 class BaselineGuardTests(unittest.TestCase):
     def setUp(self):
-        self.now = dt.datetime(2026, 11, 6, tzinfo=dt.timezone.utc)
+        self.now = dt.datetime(2026, 11, 6, tzinfo=dt.UTC)
         self.policy = {"validation": {"max_previous_age_days": 7, "max_source_drop_fraction": .2, "max_source_growth_fraction": .5, "max_output_drop_fraction": .2, "max_output_growth_fraction": .5}}
         self.previous = {"schema_version": 1, "built_at": self.now.isoformat(), "sources": [{"id": "a", "unique_conditions": 1000}], "output": {"total_conditions": 1000}}
 

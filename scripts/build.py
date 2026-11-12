@@ -9,9 +9,7 @@ import hashlib
 import ipaddress
 import json
 import os
-from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,8 +17,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 import idna
+
 from report import make_report
 from service_networks import normalize_networks, parse_networks, prepare_services, restore_services
 
@@ -34,7 +34,7 @@ class BuildError(Exception):
 
 
 def utc_now():
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
 def sha256(data):
@@ -302,7 +302,7 @@ def validate_previous(previous, stats, count, policy, now=None):
     if previous.get("schema_version") != 1:
         raise BuildError("Unsupported previous manifest version")
     v = policy["validation"]
-    current_time = now or dt.datetime.now(dt.timezone.utc)
+    current_time = now or dt.datetime.now(dt.UTC)
     age = (current_time - dt.datetime.fromisoformat(previous["built_at"])).total_seconds() / 86400
     if age < -0.1 or age > v["max_previous_age_days"]:
         raise BuildError("Previous baseline is stale or from the future; review before resuming publication")
@@ -336,7 +336,7 @@ def read_manual_rules(path, psl, *, require_review=False, allow_ip=False, now=No
                 review_after = dt.date.fromisoformat(item.get("review_after", ""))
             except ValueError as exc:
                 raise BuildError(f"Direct exception review_after must be an ISO date in {path.name}") from exc
-            current_date = now or dt.datetime.now(dt.timezone.utc).date()
+            current_date = now or dt.datetime.now(dt.UTC).date()
             if review_after < current_date:
                 raise BuildError(f"Direct exception review is overdue: {item['domain']} ({review_after})")
         if kind == "ip_cidr":
@@ -487,7 +487,7 @@ def build(args):
     previous = read_json(args.previous) if args.previous else None
     sources = sources_config["sources"]
     psl_source = sources_config["public_suffix_list"]
-    domain_inputs = sources + [psl_source]
+    domain_inputs = [*sources, psl_source]
     registry_inputs = registry_config["sources"]
     service_inputs = service_config["sources"] + [s["identity_source"] for s in service_config["sources"] if "identity_source" in s]
     all_sources = domain_inputs + registry_inputs + service_inputs
@@ -574,7 +574,7 @@ def build(args):
         for name in names:
             merged[name] = merged.get(name, 0) | manual_mask
     total_conditions += len(manual_exact) + len(manual_suffix)
-    sources_with_manual = sources + [{"id": "manual-vpn"}]
+    sources_with_manual = [*sources, {"id": "manual-vpn"}]
     before_minimize = len(exact) + len(suffix)
     original_exact, original_suffix = exact, suffix
     exact, suffix = minimize(original_exact, original_suffix)

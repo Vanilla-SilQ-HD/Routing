@@ -1,8 +1,8 @@
 """Strict service-owned CIDR inputs, independent of the domain dataset and DNS."""
 from __future__ import annotations
 
-import ipaddress
 import datetime as dt
+import ipaddress
 import json
 
 
@@ -135,7 +135,7 @@ def parse_ripe_source(source, fetched):
             raise ServiceNetworkError("RIPE snapshot time is missing")
         moment = dt.datetime.fromisoformat(snapshot)
         if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=dt.timezone.utc)
+            moment = moment.replace(tzinfo=dt.UTC)
         age = (dt.datetime.fromisoformat(evidence["fetched_at"]) - moment).total_seconds() / 3600
         if not -1 <= age <= source["max_snapshot_age_hours"]:
             raise ServiceNetworkError(f"RIPE snapshot is stale or in the future: {source['id']}")
@@ -178,7 +178,7 @@ def restore_services(previous, config, max_stale_hours, now=None):
         raise ServiceNetworkError("Service download failed and no previous complete service set is available")
     previous_services = previous["service_networks"]
     built_at = dt.datetime.fromisoformat(previous["built_at"])
-    current_time = now or dt.datetime.now(dt.timezone.utc)
+    current_time = now or dt.datetime.now(dt.UTC)
     age = (current_time - built_at).total_seconds() / 3600
     if not 0 <= age <= max_stale_hours:
         raise ServiceNetworkError("Previous complete service set is too old for stale fallback")

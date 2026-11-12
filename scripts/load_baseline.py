@@ -6,13 +6,13 @@ import gzip
 import io
 import json
 import os
-from pathlib import Path
 import re
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from pathlib import Path
 
 from build import BuildError, HTTPSRedirect, write_json
 

@@ -3,18 +3,26 @@ import copy
 import datetime as dt
 import ipaddress
 import json
-from pathlib import Path
 import random
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import build
-from service_networks import (ServiceNetworkError, coverage, normalize_networks, parse_networks,
-                              parse_ripe_source, prepare_services, restore_services, validate_previous_services)
+from service_networks import (
+    ServiceNetworkError,
+    coverage,
+    normalize_networks,
+    parse_networks,
+    parse_ripe_source,
+    prepare_services,
+    restore_services,
+    validate_previous_services,
+)
 
 TELEGRAM = """91.108.56.0/22
 91.108.4.0/22
@@ -142,9 +150,8 @@ class ServiceNetworkTests(unittest.TestCase):
             if source["id"] == "telegram-networks":
                 raise build.BuildError("Required service feed failed")
             return self.input, {}
-        with patch.object(build, "fetch_source", side_effect=fetch):
-            with self.assertRaisesRegex(build.BuildError, "Required service"):
-                build.build(args)
+        with patch.object(build, "fetch_source", side_effect=fetch), self.assertRaisesRegex(build.BuildError, "Required service"):
+            build.build(args)
         self.assertFalse(output.exists())
 
     def test_bad_service_data_stops_before_domain_processing_or_publication(self):
@@ -152,9 +159,8 @@ class ServiceNetworkTests(unittest.TestCase):
         output = Path(self.temp.name) / "not-published"
         args = argparse.Namespace(root=str(ROOT), offline=False, fetch_only=False,
                                   previous=None, output=str(output), sing_box=None)
-        with patch.object(build, "fetch_source", return_value=(self.input, {})):
-            with self.assertRaises(ServiceNetworkError):
-                build.build(args)
+        with patch.object(build, "fetch_source", return_value=(self.input, {})), self.assertRaises(ServiceNetworkError):
+            build.build(args)
         self.assertFalse(output.exists())
 
     def ripe_fixture(self, mutate=None):
@@ -170,7 +176,8 @@ class ServiceNetworkTests(unittest.TestCase):
             mutate(data, identity)
         prefix_path = Path(self.temp.name) / "ripe-prefixes.json"
         identity_path = Path(self.temp.name) / "ripe-identity.json"
-        prefix_path.write_text(json.dumps(data)); identity_path.write_text(json.dumps(identity))
+        prefix_path.write_text(json.dumps(data))
+        identity_path.write_text(json.dumps(identity))
         meta = {"fetched_at": "2026-11-06T12:00:00+00:00"}
         fetched = {source["id"]: (prefix_path, dict(meta)),
                    source["identity_source"]["id"]: (identity_path, dict(meta))}
@@ -206,7 +213,7 @@ class ServiceNetworkTests(unittest.TestCase):
 
     def test_stale_fallback_restores_only_a_complete_fresh_service_set(self):
         _, stats = self.parse()
-        now = dt.datetime.now(dt.timezone.utc)
+        now = dt.datetime.now(dt.UTC)
         previous = {"built_at": now.isoformat(), "service_networks": {
             "sources": [dict(self.source, **stats)]
         }}

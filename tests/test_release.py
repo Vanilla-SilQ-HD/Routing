@@ -1,17 +1,30 @@
 import copy
 import hashlib
-import json
-from pathlib import Path
 import sys
 import tempfile
 import unittest
 import urllib.request
 import zipfile
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from publish_release import (BUILD_FILES, DATASETS, EVIDENCE_FILES, RELEASE_FILES, CredentialSafeRedirect, PublishError,
-                             fingerprint, initial_baseline_allowed, json_bytes, parse_checksums, prepare_assets, publish,
-                             sha256, verify_candidate)
+from publish_release import (
+    BUILD_FILES,
+    DATASETS,
+    EVIDENCE_FILES,
+    RELEASE_FILES,
+    CredentialSafeRedirect,
+    PublishError,
+    fingerprint,
+    initial_baseline_allowed,
+    json_bytes,
+    parse_checksums,
+    prepare_assets,
+    publish,
+    sha256,
+    verify_candidate,
+)
+
 from build import validate_previous
 
 
@@ -54,6 +67,10 @@ class FakeGitHub:
         self.existing = {"draft": False, "prerelease": False, "assets": copy.deepcopy(self.uploaded),
                          "tag_name": self.tag, "html_url": "https://github.com/owner/Routing/releases/tag/" + self.tag}
         return self.existing
+
+    def delete_release(self, release_id):
+        self.events.append(f"delete:{release_id}")
+        return True
 
 
 class ReleaseTests(unittest.TestCase):
@@ -393,6 +410,46 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNone(redirected.get_header("Authorization"))
         with self.assertRaises(PublishError):
             handler.redirect_request(request, None, 302, "Found", {}, "http://example.com/file")
+    def test_failed_upload_rolls_back_the_draft(self):
+        old = {"assets": [], "tag_name": "previous"}
+        github = FakeGitHub(old)
+        github.fail_upload = "blocked-domains.srs"
+        with self.assertRaises(PublishError):
+            self.publish_to(github)
+        self.assertIn("delete:10", github.events)
+        self.assertNotIn("publish", github.events)
+        self.assertIs(github.existing, old)
+
+    def test_empty_api_response_is_accepted_for_delete(self):
+        from publish_release import GitHub
+
+        class EmptyResponse:
+            def read(self, _limit):
+                return b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                return EmptyResponse()
+
+        github = GitHub("owner/Routing", "token")
+        github.opener = FakeOpener()
+        self.assertIsNone(github.delete_release(10) and None)
+
+    def test_retention_selection_protects_latest_drafts_and_newest(self):
+        from publish_release import releases_to_prune
+        releases = [{"id": i, "tag_name": f"rules-{i}", "draft": False,
+                     "published_at": f"2026-11-{i:02d}T00:00:00Z"} for i in range(1, 9)]
+        releases.append({"id": 99, "tag_name": "draft", "draft": True, "published_at": "2026-11-09T00:00:00Z"})
+        prune = releases_to_prune(releases, latest_id=8, keep=5)
+        self.assertEqual([r["id"] for r in prune], [2, 1])
+        self.assertEqual(releases_to_prune(releases, latest_id=8, keep=50), [])
+        self.assertEqual(releases_to_prune([], latest_id=None, keep=5), [])
 
 
 if __name__ == "__main__":

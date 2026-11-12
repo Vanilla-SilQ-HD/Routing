@@ -11,8 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from build import BuildError
 from load_baseline import CredentialSafeRedirect, get, read_manifest_zip, restore_latest_rules
+
+from build import BuildError
 
 
 class BaselineArtifactTests(unittest.TestCase):
