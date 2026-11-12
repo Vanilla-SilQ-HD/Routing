@@ -24,7 +24,7 @@
 
 Пресеты добавляют только VPN-наборы: в AWG Manager одно действие применяется ко всем наборам пресета. После применения Full или Compact отдельно добавьте `routing-direct-exceptions` с действием **Direct** и поставьте это правило выше VPN, как показано ниже.
 
-### 1. Добавьте четыре основных Remote Rule Set
+### 1. Добавьте Remote Rule Set
 
 | Tag | Назначение |
 | --- | --- |
@@ -198,6 +198,7 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 - [Re-filter](https://github.com/1andrevich/Re-filter-lists);
 - [itdog allow-domains — Russia/inside](https://github.com/itdoginfo/allow-domains);
 - [itdog — отдельный Google AI](https://github.com/itdoginfo/allow-domains/blob/main/Services/google_ai.lst);
+- [amatol/awgmanager-lists](https://github.com/amatol/awgmanager-lists) — кураторский агрегат OONI, itdog geoblock и Services, RockBlack и community-списков;
 - [hoaxisr/vernette — RKN](https://github.com/hoaxisr/rulesets);
 - зависимости [Bungie, Kinopub, Gemini и TikTok](https://github.com/hoaxisr/rulesets);
 - [unavailable-in-russia](https://github.com/hoaxisr/rulesets).

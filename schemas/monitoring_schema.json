@@ -1,0 +1,108 @@
+## Monitoring
+
+Monitoring schema for validation.
+
+---
+
+```json
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Monitoring",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "Schema version for compatibility.",
+      "example": 1
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last update timestamp.",
+      "example": "2026-11-12T12:34:56Z"
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target domain for the probe.",
+            "example": "example.com"
+          },
+          "status": {
+            "type": "string",
+            "description": "Probe status (e.g., blocked_or_geo, ok).",
+            "example": "blocked_or_geo"
+          },
+          "http_status": {
+            "type": "integer",
+            "description": "HTTP status code.",
+            "example": 403
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "Error message if any.",
+            "example": null
+          },
+          "raw_output": {
+            "type": "string",
+            "description": "Raw output from the probe.",
+            "example": "..."
+          },
+          "probe_count": {
+            "type": "integer",
+            "description": "Number of probes.",
+            "example": 2
+          },
+          "probe_statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Statuses from all probes.",
+              "example": "blocked_or_geo"
+            }
+          },
+          "probes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "probe": {
+                  "type": "string",
+                  "description": "Probe identifier.",
+                  "example": "globalping"
+                },
+                "location": {
+                  "type": "string",
+                  "description": "Probe location.",
+                  "example": "DE"
+                },
+                "status": {
+                  "type": "string",
+                  "description": "Probe status.",
+                  "example": "blocked_or_geo"
+                },
+                "http_status": {
+                  "type": "integer",
+                  "description": "HTTP status code.",
+                  "example": 403
+                },
+                "error": {
+                  "type": ["string", "null"],
+                  "description": "Error message if any.",
+                  "example": null
+                }
+              },
+              "required": ["probe", "location", "status", "http_status", "error"]
+            }
+          }
+        },
+        "required": ["target", "status", "http_status", "error", "raw_output", "probe_count", "probe_statuses", "probes"]
+      }
+    }
+  },
+  "required": ["schema_version", "updated_at", "probes"]
+}
+```

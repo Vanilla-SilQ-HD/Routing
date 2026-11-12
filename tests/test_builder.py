@@ -258,6 +258,10 @@ class AWGPresetTests(unittest.TestCase):
         presets = build.make_presets("https://example.com/")["presets"]
         self.assertEqual({item["id"] for item in presets},
                          {"routing-full", "routing-compact", "routing-wide-cidr"})
+        by_id = {item["id"]: {r["tag"] for r in item["engines"]["singbox"]["ruleSets"]} for item in presets}
+        self.assertEqual(by_id["routing-full"], {"routing", "routing-services", "routing-registry-ip"})
+        self.assertEqual(by_id["routing-compact"], {"routing-core", "routing-services", "routing-registry-ip"})
+        self.assertEqual(by_id["routing-wide-cidr"], {"routing-registry-ip-cidr"})
         for preset in presets:
             engine = preset["engines"]["singbox"]
             self.assertEqual(engine["action"], "tunnel")

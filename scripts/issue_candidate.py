@@ -47,13 +47,19 @@ def candidate_from_issue(issue):
             raise ValueError("Only public exact /32 or /128 addresses are accepted")
         kind, domain = "ip_cidr", str(network)
     else:
-        kind, domain = "domain_suffix", normalize_domain(resource)
+        kind, domain = "domain", normalize_domain(resource)
     review_after = (dt.datetime.now(dt.timezone.utc).date() + dt.timedelta(days=30)).isoformat()
     reason = f"Issue #{issue['number']}: {issue.get('title', 'unrouted resource')}. {issue['html_url']}"
     return {"kind": kind, "domain": domain, "reason": reason, "review_after": review_after}
 
 
 def markdown(candidate, issue):
+    if expected_route(issue) == "vpn" and candidate["kind"] == "ip_cidr":
+        return (f"Точный IP `{candidate['domain']}` требует ручной проверки: автоматическое добавление "
+                f"IP-адресов в VPN-набор не поддерживается. После подтверждения владельца сети и маршрута "
+                f"добавьте адрес вручную с причиной и датой пересмотра.\n\n"
+                f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
+                f"Источник: {issue['html_url']}\n")
     target = "direct-exceptions" if expected_route(issue) == "direct" else "manual-vpn"
     return (f"Кандидат для `config/{target}.json`. Проверьте ресурс перед публикацией.\n\n"
             f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"

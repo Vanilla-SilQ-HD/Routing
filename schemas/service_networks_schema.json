@@ -1,0 +1,47 @@
+## Service Networks
+
+Service networks schema for validation.
+
+---
+
+```json
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Service Networks",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Unique identifier for the service network.",
+        "example": "example.com"
+      },
+      "description": {
+        "type": "string",
+        "description": "Service network description.",
+        "example": "Example service network"
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "Source identifiers (e.g., sources.json).",
+          "example": "example.com"
+        }
+      },
+      "format": {
+        "type": "string",
+        "description": "Format of the service network (e.g., cidr-lines, ripe-ris-prefixes).",
+        "example": "cidr-lines"
+      },
+      "identity_source": {
+        "type": "string",
+        "description": "Identity source for the service network.",
+        "example": "example.com"
+      }
+    },
+    "required": ["id", "description", "sources", "format", "identity_source"]
+  }
+}
+```

@@ -43,6 +43,16 @@
       "reference": "https://github.com/itdoginfo/allow-domains#%D1%80%D0%B5%D1%81%D1%83%D1%80%D1%81%D1%8B-%D0%BA%D0%BE%D1%82%D0%BE%D1%80%D1%8B%D1%85-%D0%BD%D0%B0%D0%BC%D0%B5%D1%80%D0%B5%D0%BD%D0%BD%D0%BE-%D0%BD%D0%B5%D1%82-%D0%B2-%D0%BE%D0%B1%D1%89%D0%B8%D1%85-%D1%81%D0%BF%D0%B8%D1%81%D0%BA%D0%B0%D1%85"
     },
     {
+      "id": "awgmanager-lists",
+      "url": "https://raw.githubusercontent.com/amatol/awgmanager-lists/main/domains.lst",
+      "format": "suffix-lines",
+      "min_entries": 2000,
+      "max_bytes": 1048576,
+      "description": "Кураторский агрегат amatol/awgmanager-lists: OONI, itdog geoblock и Services, RockBlack, community",
+      "reference": "https://github.com/amatol/awgmanager-lists#readme",
+      "caveat": "Агрегат других открытых списков (Re-filter OONI/community, itdog inside-kvas/geoblock/Services, RockBlack, собственные community-списки). Используется для свежих дополнений и покрытия сервисов, а не как независимое подтверждение блокировок."
+    },
+    {
       "id": "rkn",
       "url": "https://raw.githubusercontent.com/hoaxisr/rulesets/master/json/rkn.json",
       "format": "singbox-domains",

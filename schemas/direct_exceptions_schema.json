@@ -1,0 +1,52 @@
+## Direct Exceptions
+
+Direct exceptions schema for validation.
+
+---
+
+```json
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Direct Exceptions",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "Schema version for compatibility.",
+      "example": 1
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["domain", "domain_suffix", "ip_cidr"],
+            "description": "Rule type.",
+            "example": "domain"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Domain name or CIDR.",
+            "example": "example.com"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the rule.",
+            "example": "Service is not blocked in the region"
+          },
+          "review_after": {
+            "type": "string",
+            "format": "date",
+            "description": "Review date.",
+            "example": "2026-12-12"
+          }
+        },
+        "required": ["kind", "domain", "reason", "review_after"]
+      }
+    }
+  },
+  "required": ["schema_version", "rules"]
+}
+```

@@ -530,7 +530,7 @@ def build(args):
     core_exact, core_suffix = {}, {}
     core_excluded = set(sources_config.get("core_excluded_sources", []))
     stats, total_conditions, skipped = [], 0, 0
-    registry_networks = []
+    domain_registry_ips = []
     shared = {normalize_domain(name): reason for name, reason in policy["shared_roots"].items()}
     service_owned = {normalize_domain(name) for name in policy.get("service_owned_suffixes", {})}
     if shared.keys() & service_owned:
@@ -540,7 +540,7 @@ def build(args):
         source_exact, source_suffix, parsed = parse_source(
             fetched[source["id"]][0], source, policy["validation"]["max_invalid_fraction"], source_ips)
         for network in source_ips:
-            registry_networks.append((network, 1 << i))
+            domain_registry_ips.append((network, 1 << i))
         metadata = dict(fetched[source["id"]][1], **parsed, description=source["description"])
         if "caveat" in source:
             metadata["caveat"] = source["caveat"]
@@ -606,6 +606,8 @@ def build(args):
         registry_source_stats.append(dict(fetched[source["id"]][1], **parsed,
                                           exact_prefixes=exact_count, cidr_prefixes=cidr_count,
                                           description=source["description"]))
+    for network, mask in domain_registry_ips:
+        registry_by_network[network] = registry_by_network.get(network, 0) | mask
     registry_networks = exact_networks(registry_by_network)
     registry_cidr_networks = normalize_networks(registry_cidr_by_network)
     if not 1 <= len(registry_networks) <= policy["validation"]["maximum_registry_ips"]:
@@ -815,8 +817,8 @@ def make_presets(release_base):
     specifications = [
         ("routing-full", "Routing · Full", ["routing", "routing-services", "routing-registry-ip"],
          "Полная доменная база и точные IP. Direct-исключения настройте отдельным приоритетным правилом."),
-        ("routing-compact", "Routing · Compact", ["routing-core", "routing-services"],
-         "Компактная доменная база без двух крупнейших реестров. Direct-исключения настраиваются отдельно."),
+        ("routing-compact", "Routing · Compact", ["routing-core", "routing-services", "routing-registry-ip"],
+         "Компактная доменная база без двух крупнейших реестров, сервисные сети и точные IP. Direct-исключения настраиваются отдельно."),
         ("routing-wide-cidr", "Routing · Wide CIDR", ["routing-registry-ip-cidr"],
          "Дополнительные широкие CIDR. Подключайте только после проверки покрытия."),
     ]
