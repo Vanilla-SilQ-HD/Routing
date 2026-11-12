@@ -89,7 +89,7 @@ Latest и черновики защищены всегда. Требуются `
 & ./.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
 & ./.venv/Scripts/python.exe -m ruff check scripts tests
 & ./.venv/Scripts/python.exe -m coverage run -m unittest discover -s tests -v
-& ./.venv/Scripts/python.exe -m coverage report --fail-under=55
+& ./.venv/Scripts/python.exe -m coverage report --fail-under=60
 ```
 
 Те же проверки выполняет job `quality` в GitHub Actions для push и pull request; публикация релиза возможна только из main.

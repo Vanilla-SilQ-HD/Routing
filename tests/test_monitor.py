@@ -55,6 +55,52 @@ class MonitorTests(unittest.TestCase):
         self.assertNotIn("<img src=x onerror=alert(1)>", report)
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", report)
         self.assertIn("&lt;b&gt;time&lt;/b&gt;", report)
+    def test_empty_measurement_result_is_unknown(self):
+        with patch("monitor.create_measurement", return_value={"id": "m1"}), \
+                patch("monitor.wait_for_measurement", return_value={"results": []}):
+            result = run_probe({"provider": {}}, "example.com")
+        self.assertEqual(result["status"], "unknown")
+        self.assertEqual(result["error"], "empty result")
+
+    def test_measurement_timeout_is_an_explicit_error(self):
+        from monitor import wait_for_measurement
+        config = {"provider": {"url": "https://api.example/measurements", "timeout_seconds": -1}}
+        with self.assertRaises(TimeoutError):
+            wait_for_measurement(config, "m1")
+
+    def test_measurement_request_payload(self):
+        from monitor import create_measurement
+        config = {"provider": {"url": "https://api.example/measurements", "probes_per_target": 2, "country": "RU"}}
+        with patch("monitor.request_json", return_value={"id": "m1"}) as request:
+            create_measurement(config, "example.com")
+        payload = request.call_args.kwargs["payload"]
+        self.assertEqual(payload["target"], "example.com")
+        self.assertEqual(payload["type"], "http")
+        self.assertEqual(payload["limit"], 2)
+        self.assertEqual(payload["locations"], [{"country": "RU"}])
+
+    def test_offline_main_preserves_history_without_new_probes(self):
+        import json
+        import tempfile
+
+        from monitor import main
+        config = {"provider": {"name": "Globalping", "url": "https://api.example", "probes_per_target": 1,
+                               "country": "RU", "timeout_seconds": 1}, "targets": ["example.com"]}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "config.json").write_text(json.dumps(config), encoding="utf-8")
+            previous = {"history": [{"generated_at": "2026-11-01T00:00:00+00:00", "results": []}]}
+            with patch("monitor.load_previous", return_value=previous), \
+                    patch("monitor.run_probe", side_effect=AssertionError("offline run must not probe")), \
+                    patch.object(sys, "argv", ["monitor.py", "--config", str(root / "config.json"),
+                                               "--output", str(root / "out.json"), "--html", str(root / "out.html"),
+                                               "--offline"]):
+                main()
+            data = json.loads((root / "out.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(data["history"]), 1)
+            self.assertEqual(data["automatic_route_changes"], False)
+            self.assertEqual(data["vpn_measurement"], "not_performed")
+            self.assertTrue((root / "out.html").is_file())
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -95,6 +96,38 @@ class BaselineArtifactTests(unittest.TestCase):
                 self.assertEqual(Path("previous/blocked-domains.json").read_bytes(), rules)
             finally:
                 os.chdir(previous_cwd)
+    def test_get_rejects_credentials_outside_github_api(self):
+        with self.assertRaises(BuildError):
+            get("https://example.com/repos/owner/Routing", "token")
+
+    def test_get_enforces_the_response_size_limit(self):
+        with patch("load_baseline.urllib.request.build_opener") as factory:
+            response = factory.return_value.open.return_value.__enter__.return_value
+            response.read.return_value = b"x" * 101
+            with self.assertRaises(BuildError):
+                get("https://api.github.com/repos/owner/Routing", "token", limit=100)
+
+    def test_missing_latest_release_is_a_noop(self):
+        error = urllib.error.HTTPError("https://api.github.com/x", 404, "Not Found", {}, None)
+        with patch("load_baseline.get", side_effect=error):
+            self.assertIsNone(restore_latest_rules("https://api.github.com/repos/owner/Routing", "token"))
+
+    def test_release_without_rule_assets_is_a_noop(self):
+        with patch("load_baseline.get", return_value={"tag_name": "rules-1-1", "assets": []}):
+            self.assertIsNone(restore_latest_rules("https://api.github.com/repos/owner/Routing", "token"))
+
+    def test_reset_baseline_requires_an_explicit_manual_run(self):
+        from load_baseline import main
+        with patch.dict(os.environ, {"RESET_BASELINE": "true", "GITHUB_EVENT_NAME": "schedule"}, clear=True), self.assertRaises(BuildError):
+            main()
+        with patch.dict(os.environ, {"RESET_BASELINE": "true", "GITHUB_EVENT_NAME": "workflow_dispatch"}, clear=True):
+            self.assertIsNone(main())
+
+    def test_invalid_repository_is_rejected(self):
+        from load_baseline import main
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "bad/name!", "BASELINE_BRANCH": "main",
+                                     "GITHUB_TOKEN": "token"}, clear=True), self.assertRaises(BuildError):
+            main()
 
 
 if __name__ == "__main__":
