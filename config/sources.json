@@ -50,7 +50,13 @@
       "max_bytes": 1048576,
       "description": "Кураторский агрегат amatol/awgmanager-lists: OONI, itdog geoblock и Services, RockBlack, community",
       "reference": "https://github.com/amatol/awgmanager-lists#readme",
-      "caveat": "Агрегат других открытых списков (Re-filter OONI/community, itdog inside-kvas/geoblock/Services, RockBlack, собственные community-списки). Используется для свежих дополнений и покрытия сервисов, а не как независимое подтверждение блокировок."
+      "caveat": "Агрегат других открытых списков (Re-filter OONI/community, itdog inside-kvas/geoblock/Services, RockBlack, собственные community-списки). Используется для свежих дополнений и покрытия сервисов, а не как независимое подтверждение блокировок.",
+      "aggregates": [
+        "refilter",
+        "itdog-inside",
+        "antifilter-community",
+        "rockblack-telegram"
+      ]
     },
     {
       "id": "rkn",
@@ -112,7 +118,10 @@
       "reference": "https://github.com/RockBlack-VPN/ip-address"
     }
   ],
-  "core_excluded_sources": ["antifilter-full", "rkn"],
+  "core_excluded_sources": [
+    "antifilter-full",
+    "rkn"
+  ],
   "public_suffix_list": {
     "id": "public-suffix-list",
     "url": "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat",

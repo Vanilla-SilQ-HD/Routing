@@ -135,6 +135,35 @@ jobs:
           python scripts/build.py --output dist "${args[@]}"
         env:
           ALLOW_LARGE_CHANGE: ${{ inputs.allow_large_change || false }}
+      - name: Measure sing-box memory per profile (advisory)
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, subprocess, sys
+          profiles = {"full": "dist/blocked-domains.srs", "compact": "dist/blocked-domains-core.srs"}
+          results = {}
+          for name, path in profiles.items():
+              out = subprocess.run([sys.executable, "scripts/measure_memory.py", path, "--seconds", "6"],
+                                   capture_output=True, text=True)
+              for line in out.stderr.splitlines():
+                  if "max_rss_bytes" in line:
+                      results[name] = json.loads(line[line.index("{"):])["max_rss_bytes"]
+          if not results:
+              print("Memory measurement unavailable", file=sys.stderr)
+              sys.exit(0)
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          limit = 64 * 1024 * 1024
+          lines = ["## sing-box memory (RSS)\n", "| Profile | Max RSS |", "| --- | ---: |"]
+          for name, rss in results.items():
+              lines.append(f"| {name} | {rss / 1024 / 1024:.1f} МБ |")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("\n".join(lines) + "\n")
+          if results.get("compact", 0) > limit:
+              print(f"::warning::Compact profile RSS {results['compact'] / 1024 / 1024:.1f} МБ exceeds the 64 МБ advisory limit")
+          print(json.dumps(results))
+          PY
       - name: Save complete reviewable result
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

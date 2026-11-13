@@ -18,7 +18,12 @@
     "github.com", "raw.githubusercontent.com", "google.com", "mail.google.com", "drive.google.com", "googleapis.com", "gstatic.com",
     "fonts.googleapis.com", "fonts.gstatic.com", "maps.googleapis.com",
     "microsoft.com", "apple.com", "stackoverflow.com", "wikipedia.org", "developer.mozilla.org",
-    "pages.dev", "ordinary-project.pages.dev", "example.ua", "example.ru"
+    "pages.dev", "ordinary-project.pages.dev", "example.ua", "example.ru",
+    "googleusercontent.com", "clients6.google.com", "gvt1.com", "gvt2.com", "ggpht.com",
+    "githubassets.com", "github.io", "workers.dev", "cloudflare.com", "cloudflare.net",
+    "cloudfront.net", "amazonaws.com", "akamaized.net", "akamaihd.net", "akamaiedge.net",
+    "edgekey.net", "edgesuite.net", "fastly.net", "fastlylb.net", "azureedge.net",
+    "azurewebsites.net", "cloudapp.net", "trafficmanager.net", "windows.net"
   ],
   "expectations": {
     "chatgpt.com": "VPN",
@@ -81,6 +86,30 @@
     "pages.dev": "Direct",
     "ordinary-project.pages.dev": "Direct",
     "example.ua": "Direct",
-    "example.ru": "Direct"
+    "example.ru": "Direct",
+    "googleusercontent.com": "Direct",
+    "clients6.google.com": "Direct",
+    "gvt1.com": "Direct",
+    "gvt2.com": "Direct",
+    "ggpht.com": "Direct",
+    "githubassets.com": "Direct",
+    "github.io": "Direct",
+    "workers.dev": "Direct",
+    "cloudflare.com": "Direct",
+    "cloudflare.net": "Direct",
+    "cloudfront.net": "Direct",
+    "amazonaws.com": "Direct",
+    "akamaized.net": "Direct",
+    "akamaihd.net": "Direct",
+    "akamaiedge.net": "Direct",
+    "edgekey.net": "Direct",
+    "edgesuite.net": "Direct",
+    "fastly.net": "Direct",
+    "fastlylb.net": "Direct",
+    "azureedge.net": "Direct",
+    "azurewebsites.net": "Direct",
+    "cloudapp.net": "Direct",
+    "trafficmanager.net": "Direct",
+    "windows.net": "Direct"
   }
 }

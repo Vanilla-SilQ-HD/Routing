@@ -37,10 +37,30 @@ def validate_semantics(configs: dict[str, Any]) -> list[str]:
     missing = set(configs["sources.json"].get("core_excluded_sources", [])) - source_ids
     if missing:
         errors.append(f"sources.json: unknown core_excluded_sources: {sorted(missing)}")
+    for source in configs["sources.json"]["sources"]:
+        unknown = set(source.get("aggregates", [])) - source_ids
+        if unknown:
+            errors.append(f"sources.json: {source['id']} aggregates unknown sources: {sorted(unknown)}")
+        if source["id"] in source.get("aggregates", []):
+            errors.append(f"sources.json: {source['id']} cannot aggregate itself")
     probes = configs["probes.json"]
     unknown_probes = set(probes["expectations"]) - set(probes["domains"])
     if unknown_probes:
         errors.append(f"probes.json: expectations missing from domains: {sorted(unknown_probes)}")
+    errors.extend(validate_shared_root_probes(configs["policy.json"], probes))
+    return errors
+
+
+def validate_shared_root_probes(policy: dict[str, Any], probes: dict[str, Any]) -> list[str]:
+    """Every shared (Direct) root must be pinned by a Direct probe for the root itself
+    or one of its subdomains. Removing a root from the policy then fails validation,
+    so a shared-infrastructure root can never silently become VPN-routed."""
+    direct = {domain for domain, route in probes.get("expectations", {}).items() if route == "Direct"}
+    errors = []
+    for root in policy.get("shared_roots", {}):
+        covered = any(domain == root or domain.endswith("." + root) for domain in direct)
+        if not covered:
+            errors.append(f"policy.json: shared_root {root!r} has no Direct probe for the root or a subdomain")
     return errors
 
 

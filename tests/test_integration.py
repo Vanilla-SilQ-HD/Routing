@@ -131,6 +131,23 @@ class IntegrationTests(unittest.TestCase):
         errors = validate_config.validate_all(self.root)
         self.assertTrue(any("manual-vpn.json" in error for error in errors))
 
+    def test_shared_roots_require_a_direct_probe(self):
+        check = validate_config.validate_shared_root_probes
+        policy = {"shared_roots": {"cloudflare.com": "cdn", "pages.dev": "hosting"}}
+        # A Direct probe for a subdomain covers the root.
+        ok = {"expectations": {"ordinary-project.pages.dev": "Direct", "cloudflare.com": "Direct"}}
+        self.assertEqual(check(policy, ok), [])
+        # A VPN-routed or missing root is reported.
+        missing = {"expectations": {"pages.dev": "Direct"}}
+        errors = check(policy, missing)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("cloudflare.com", errors[0])
+        # The real repository configuration must satisfy the invariant.
+        import json as _json
+        real_policy = _json.loads((ROOT / "config/policy.json").read_text(encoding="utf-8"))
+        real_probes = _json.loads((ROOT / "config/probes.json").read_text(encoding="utf-8"))
+        self.assertEqual(check(real_policy, real_probes), [])
+
     def test_cache_is_pruned_by_age_and_size(self):
         cache = self.root / "cache/sources"
         old = cache / "old.data"

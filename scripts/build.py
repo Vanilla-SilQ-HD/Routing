@@ -872,10 +872,20 @@ def build(args: Any) -> None:
         config_hashes = {str(path.relative_to(root)).replace(os.sep, "/"): file_sha256(path) for path in sorted(recipe_paths)}
         source_bits = collections.Counter(mask for mask in original_exact.values())
         source_bits.update(original_suffix.values())
+        # An aggregator that merely re-publishes other configured sources must not count
+        # as an independent confirmation of the same record.
+        aggregates = {s["id"]: set(s.get("aggregates", [])) for s in sources_with_manual if s.get("aggregates")}
         intersections = []
         for mask, amount in sorted(source_bits.items()):
-            intersections.append({"sources": [s["id"] for i, s in enumerate(sources_with_manual) if mask & (1 << i)],
-                                  "unique_conditions": amount})
+            ids = [s["id"] for i, s in enumerate(sources_with_manual) if mask & (1 << i)]
+            remaining = set(ids)
+            for agg_id, members in aggregates.items():
+                if agg_id in remaining and remaining - {agg_id} <= members:
+                    # Every other source is already contained in this aggregator.
+                    remaining = {agg_id}
+            intersections.append({"sources": ids, "unique_conditions": amount,
+                                  "independent_sources": sorted(remaining),
+                                  "independent_confirmation": len(remaining) > 1})
         registry_output = {
             "total_prefixes": len(registry_networks),
             "ipv4_prefixes": sum(n.version == 4 for n in registry_networks),
