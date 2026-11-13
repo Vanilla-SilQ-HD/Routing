@@ -1,0 +1,34 @@
+name: Ошибка сборки
+description: Сообщите о сбое сборки, публикации или валидации
+title: "Сборка: "
+labels: ["build", "bug"]
+body:
+  - type: input
+    id: run
+    attributes:
+      label: Ссылка на прогон
+      placeholder: https://github.com/Vanilla-SilQ-HD/Routing/actions/runs/...
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Стадия сбоя
+      options:
+        - Загрузка источника
+        - Валидация конфигов
+        - Компиляция SRS
+        - Probes / semantic diff
+        - Публикация релиза
+        - Pages / Dashboard
+        - Другое
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Фрагмент лога
+      description: Сообщение об ошибке и окружающий контекст
+      render: text
+    validations:
+      required: true

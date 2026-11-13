@@ -1,0 +1,28 @@
+name: Вопрос по настройке
+description: Вопрос о подключении наборов в AWG Manager или sing-box
+title: "Вопрос: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Вопрос
+      description: Опишите, что вы хотите сделать и что не получается
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Клиент и версия
+      placeholder: AWG Manager x.y.z / sing-box 1.14.x
+  - type: input
+    id: device
+    attributes:
+      label: Устройство / прошивка
+      placeholder: Keenetic, OpenWrt, десктоп
+  - type: textarea
+    id: config
+    attributes:
+      label: Конфигурация
+      description: Правила маршрутизации и DNS (без личных данных и ключей)
+      render: json

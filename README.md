@@ -14,7 +14,7 @@
 
 Автообновляемые наборы для **sing-box** и **AWG Manager**: выборочная маршрутизация — заблокированные и недоступные в России ресурсы через VPN, остальной трафик напрямую.
 
-[Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/) · [Мониторинг](https://vanilla-silq-hd.github.io/Routing/monitoring.html) · [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json)
+[Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/) · [Мониторинг](https://vanilla-silq-hd.github.io/Routing/monitoring.html) · [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json) · [English README](README.en.md)
 
 ## Быстрый старт
 
@@ -26,6 +26,7 @@
 |-------|-------------------------------|
 | **Полная доменная база** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs` |
 | **Compact (без крупных реестров)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-core.srs` |
+| **Smart (Compact + популярные домены)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-smart.srs` |
 | **Сети приложений (Telegram)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs` |
 | **Точные IP-адреса** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs` |
 | **Широкие CIDR (опционально)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip-cidr.srs` |
@@ -33,7 +34,7 @@
 
 ### Подключение за 4 шага
 
-1. Выберите профиль **Full** или **Compact** в [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json).
+1. Выберите профиль **Full**, **Compact** или **Smart** в [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json).
 2. Подключите удалённые наборы по инструкции ниже и направьте их в свой VPN-outbound.
 3. Добавьте `routing-direct-exceptions` с действием **Direct** выше VPN-правила.
 4. Оставьте маршрут по умолчанию **Direct** и [проверьте результат](#4-проверьте-результат).
@@ -57,6 +58,7 @@
 | --- | --- |
 | `routing` | Полная доменная база |
 | `routing-core` | Compact: база без двух крупнейших реестров |
+| `routing-smart` | Smart: Compact + популярные домены из Full |
 | `routing-services` | Проверенные сети приложений, сейчас Telegram |
 | `routing-registry-ip` | Точные IP-адреса из блок-листов |
 | `routing-registry-ip-cidr` | Необязательные широкие CIDR с предупреждением |
@@ -67,6 +69,7 @@
 ```text
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-core.srs
+https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-smart.srs
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs
 https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip-cidr.srs
@@ -78,6 +81,7 @@ https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-dire
 ```text
 https://vanilla-silq-hd.github.io/Routing/blocked-domains.srs
 https://vanilla-silq-hd.github.io/Routing/blocked-domains-core.srs
+https://vanilla-silq-hd.github.io/Routing/blocked-domains-smart.srs
 https://vanilla-silq-hd.github.io/Routing/blocked-services-ip.srs
 https://vanilla-silq-hd.github.io/Routing/blocked-registry-ip.srs
 https://vanilla-silq-hd.github.io/Routing/blocked-registry-ip-cidr.srs
@@ -214,6 +218,7 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 | --- | --- |
 | `blocked-domains.srs` | Полная доменная база для маршрутизации и DNS |
 | `blocked-domains-core.srs` | Compact: те же источники без Antifilter full и RKN |
+| `blocked-domains-smart.srs` | Smart: Compact + популярные регистрируемые домены из Full по Tranco top-1M |
 | `blocked-services-ip.srs` | Официальные сети Telegram и маршруты пяти выделенных AS из RIPE RIS |
 | `blocked-registry-ip.srs` | Только публичные IPv4 `/32` и IPv6 `/128`, без объединения в подсети |
 | `blocked-registry-ip-cidr.srs` | Необязательные широкие CIDR с сохранением исходных границ |
@@ -297,3 +302,21 @@ GitHub Actions проверяет источники четыре раза в с
 - [Форматы данных](docs/DATA_FORMATS.md)
 - [IP-источники и охват](docs/IP-COVERAGE.md)
 - [Последний релиз, manifest и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)
+
+## Лицензии
+
+- **Код** — [MIT](LICENSE).
+- **Данные наборов** (SRS, JSON, TXT, manifest, catalog, пресеты, отчёты) — [CC0](LICENSE-DATA).
+
+Исходные источники сохраняют собственные лицензии. Там, где источник требует указания авторства или распространения на тех же условиях, это требование имеет приоритет для соответствующих записей.
+
+| Источник | Лицензия / условия |
+| --- | --- |
+| Antifilter (full, community, ipresolve, subnet) | Публичные блок-листы RunetFreedom; свободное использование с указанием источника |
+| Re-filter / ipsum | [Re-filter-lists](https://github.com/1andrevich/Re-filter-lists) — условия репозитория |
+| itdog allow-domains | [allow-domains](https://github.com/itdoginfo/allow-domains) — условия репозитория |
+| hoaxisr / vernette rulesets (RKN, unavailable, сервисы) | [hoaxisr/rulesets](https://github.com/hoaxisr/rulesets) — условия репозитория |
+| amatol/awgmanager-lists | [awgmanager-lists](https://github.com/amatol/awgmanager-lists) — агрегат открытых списков |
+| RockBlack-VPN | [ip-address](https://github.com/RockBlack-VPN/ip-address) — условия репозитория |
+| Tranco top-1M (популярность для Smart) | [Tranco](https://tranco-list.eu/) — исследовательский рейтинг, свободное использование с указанием источника |
+| Public Suffix List | [MPL 2.0](https://publicsuffix.org/list/) |

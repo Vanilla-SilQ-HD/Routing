@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Обсуждения
+    url: https://github.com/Vanilla-SilQ-HD/Routing/discussions
+    about: Общие вопросы, идеи и обмен опытом — в Discussions.
+  - name: Routing Dashboard
+    url: https://vanilla-silq-hd.github.io/Routing/
+    about: Источники, маршруты probes, изменения покрытия и результаты проверок.
+  - name: Сообщить об уязвимости
+    url: https://github.com/Vanilla-SilQ-HD/Routing/security/advisories/new
+    about: Приватный канал для уязвимостей (см. SECURITY.md).

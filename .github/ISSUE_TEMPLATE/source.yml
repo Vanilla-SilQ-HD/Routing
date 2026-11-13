@@ -1,0 +1,45 @@
+name: Предложить источник
+description: Предложите новый публичный список доменов или IP для покрытия
+title: "Источник: "
+labels: ["source", "enhancement"]
+body:
+  - type: input
+    id: url
+    attributes:
+      label: URL источника
+      description: Прямая HTTPS-ссылка на список
+      placeholder: https://example.com/list.lst
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Репозиторий / страница проекта
+      placeholder: https://github.com/owner/project
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Тип записей
+      options:
+        - Домены
+        - Точные IP (/32, /128)
+        - CIDR
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Покрытие и примеры
+      description: Что покрывает источник, сколько записей, примеры. Частота обновлений.
+    validations:
+      required: true
+  - type: textarea
+    id: overlap
+    attributes:
+      label: Пересечения
+      description: Является ли источник агрегатом уже подключённых списков? Если да — каких?
+  - type: input
+    id: license
+    attributes:
+      label: Лицензия
+      description: Лицензия источника, если известна

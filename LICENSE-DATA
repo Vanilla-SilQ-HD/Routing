@@ -1,0 +1,13 @@
+CC0 1.0 Universal (CC0 1.0) — Public Domain Dedication
+
+The generated rule sets (SRS, JSON, TXT), manifests, catalogs, presets and
+monitoring reports produced by this project are dedicated to the public domain
+under CC0 1.0. You may copy, modify, distribute and use them for any purpose,
+including commercial, without asking permission.
+
+This dedication covers the project's own build artifacts only. The upstream
+data sources listed in README.md retain their own licenses and terms; where a
+source requires attribution or share-alike distribution, that requirement takes
+precedence over this dedication for the corresponding records.
+
+Full legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
