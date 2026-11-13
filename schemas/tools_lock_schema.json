@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Pinned compiler",
+  "type": "object",
+  "required": ["sing_box_version", "source_format_version", "assets"],
+  "properties": {
+    "sing_box_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "source_format_version": {"type": "integer", "minimum": 1},
+    "assets": {
+      "type": "object",
+      "required": ["windows-amd64", "linux-amd64"],
+      "additionalProperties": {
+        "type": "object",
+        "required": ["url", "sha256", "member"],
+        "properties": {
+          "url": {"type": "string", "pattern": "^https://"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "member": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

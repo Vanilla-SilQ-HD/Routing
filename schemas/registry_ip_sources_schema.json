@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Registry IP sources",
+  "type": "object",
+  "required": ["schema_version", "sources"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "url", "format", "min_entries", "max_entries", "max_bytes", "min_ipv4_entries", "min_ipv6_entries", "min_ipv4_prefix_length", "min_ipv6_prefix_length", "max_ipv4_addresses", "max_ipv6_addresses", "description"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+          "url": {"type": "string", "pattern": "^https://"},
+          "format": {"const": "cidr-lines"},
+          "min_entries": {"type": "integer", "minimum": 1},
+          "max_entries": {"type": "integer", "minimum": 1},
+          "max_bytes": {"type": "integer", "minimum": 1},
+          "min_ipv4_entries": {"type": "integer", "minimum": 0},
+          "min_ipv6_entries": {"type": "integer", "minimum": 0},
+          "min_ipv4_prefix_length": {"type": "integer", "minimum": 0, "maximum": 32},
+          "min_ipv6_prefix_length": {"type": "integer", "minimum": 0, "maximum": 128},
+          "max_ipv4_addresses": {"type": "integer", "minimum": 1},
+          "max_ipv6_addresses": {"type": "integer", "minimum": 1},
+          "description": {"type": "string"}
+        }
+      }
+    }
+  }
+}

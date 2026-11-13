@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "description": "Пример; скопируйте правило в config/direct-exceptions.json после проверки",
+  "rules": [
+    {
+      "kind": "ip_cidr",
+      "domain": "1.1.1.1/32",
+      "reason": "Issue #124: пример Direct-исключения публичного DNS-резолвера",
+      "review_after": "2027-02-01"
+    }
+  ]
+}

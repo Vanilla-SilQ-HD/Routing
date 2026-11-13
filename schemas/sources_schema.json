@@ -1,74 +1,38 @@
-## Sources
-
-Source schema for validation.
-
----
-
-```json
 {
   "$schema": "https://json-schema.org/draft-2020-12/schema",
-  "title": "Sources",
-  "type": "array",
-  "items": {
-    "type": "object",
-    "properties": {
-      "id": {
-        "type": "string",
-        "description": "Unique identifier for the source.",
-        "example": "example.com"
-      },
-      "description": {
-        "type": "string",
-        "description": "Source description.",
-        "example": "Example source"
-      },
-      "raw_prefixes": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "description": "Raw prefixes (e.g., 1.2.3.4/32, 2001:db8::1/128).",
-          "example": "1.2.3.4/32"
-        }
-      },
-      "valid_prefixes": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "description": "Valid prefixes after deduplication and filtering.",
-          "example": "1.2.3.4/32"
-        }
-      },
-      "exact_ip_prefixes": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "description": "Exact IP prefixes (e.g., 1.2.3.4/32).",
-          "example": "1.2.3.4/32"
-        }
-      },
-      "cidr_prefixes": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "description": "CIDR prefixes (e.g., 1.2.3.4/32).",
-          "example": "1.2.3.4/32"
-        }
-      },
-      "invalid_count": {
-        "type": "integer",
-        "description": "Number of invalid prefixes.",
-        "example": 0
-      },
-      "invalid_reasons": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "description": "Reasons for invalid prefixes.",
-          "example": "Invalid reason"
+  "title": "Domain sources",
+  "type": "object",
+  "required": ["sources", "public_suffix_list"],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "url", "format", "min_entries", "max_bytes", "description"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+          "url": {"type": "string", "pattern": "^https://"},
+          "format": {"enum": ["suffix-lines", "singbox-domains"]},
+          "min_entries": {"type": "integer", "minimum": 1},
+          "max_bytes": {"type": "integer", "minimum": 1},
+          "description": {"type": "string", "minLength": 1},
+          "reference": {"type": "string"},
+          "caveat": {"type": "string"}
         }
       }
     },
-    "required": ["id", "description", "raw_prefixes", "valid_prefixes", "exact_ip_prefixes", "cidr_prefixes", "invalid_count", "invalid_reasons"]
+    "core_excluded_sources": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "public_suffix_list": {
+      "type": "object",
+      "required": ["id", "url", "max_bytes", "min_entries", "description"],
+      "properties": {
+        "id": {"type": "string"},
+        "url": {"type": "string", "pattern": "^https://"},
+        "max_bytes": {"type": "integer", "minimum": 1},
+        "min_entries": {"type": "integer", "minimum": 1},
+        "description": {"type": "string"}
+      }
+    }
   }
 }
-```

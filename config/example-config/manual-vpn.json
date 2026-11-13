@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "description": "Пример; скопируйте правило в config/manual-vpn.json после проверки",
+  "rules": [
+    {
+      "kind": "domain",
+      "domain": "service.example",
+      "reason": "Issue #123: ресурс недоступен напрямую у нескольких провайдеров",
+      "review_after": "2027-02-01"
+    }
+  ]
+}

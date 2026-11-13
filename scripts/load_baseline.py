@@ -5,27 +5,36 @@ GitHub read-only APIs only. No publication and no router access.
 import gzip
 import io
 import json
+import logging
 import os
 import re
-import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Any
 
-from build import BuildError, HTTPSRedirect, write_json
+try:
+    from .build import BuildError, HTTPSRedirect, write_json
+    from .logging_utils import configure_logging
+except ImportError:
+    from logging_utils import configure_logging  # type: ignore[no-redef]
+
+    from build import BuildError, HTTPSRedirect, write_json  # type: ignore[no-redef]
+
+logger = logging.getLogger(__name__)
 
 
 class CredentialSafeRedirect(HTTPSRedirect):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
         if redirected is not None and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
             redirected.remove_header("Authorization")
         return redirected
 
 
-def get(url, token, as_json=True, limit=4 * 1024 * 1024, octet_stream=False):
+def get(url: str, token: str, as_json: bool = True, limit: int = 4 * 1024 * 1024, octet_stream: bool = False) -> Any:
     if urllib.parse.urlsplit(url).hostname != "api.github.com":
         raise BuildError("Credentials may only be sent to api.github.com")
     request = urllib.request.Request(url, headers={
@@ -41,7 +50,7 @@ def get(url, token, as_json=True, limit=4 * 1024 * 1024, octet_stream=False):
     return json.loads(payload) if as_json else payload
 
 
-def read_manifest_zip(payload):
+def read_manifest_zip(payload: bytes) -> Any:
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         members = [m for m in archive.infolist() if m.filename == "manifest.json"]
         if len(members) != 1 or members[0].file_size > 64 * 1024 * 1024:
@@ -49,7 +58,7 @@ def read_manifest_zip(payload):
         return json.loads(archive.read(members[0]))
 
 
-def restore_latest_rules(base, token):
+def restore_latest_rules(base: str, token: str) -> None:
     try:
         latest = get(base + "/releases/latest", token)
     except urllib.error.HTTPError as exc:
@@ -78,14 +87,15 @@ def restore_latest_rules(base, token):
     output = Path("previous/blocked-domains.json")
     output.parent.mkdir(exist_ok=True)
     output.write_bytes(rules)
-    print(f"Restored previous domain rules from release {latest['tag_name']}")
+    logger.info("Restored previous domain rules from release %s", latest["tag_name"])
 
 
-def main():
+def main() -> None:
+    configure_logging()
     if os.environ.get("RESET_BASELINE", "false").lower() == "true":
         if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
             raise BuildError("Baseline reset is allowed only on explicit manual runs")
-        print("Explicit manual baseline reset: candidate will be labelled first-build.")
+        logger.info("Explicit manual baseline reset: candidate will be labelled first-build.")
         return
     repository = os.environ["GITHUB_REPOSITORY"]
     branch = os.environ["BASELINE_BRANCH"]
@@ -98,7 +108,7 @@ def main():
     runs = [r for r in runs if str(r["id"]) != os.environ.get("GITHUB_RUN_ID") and r["event"] in {"schedule", "push", "workflow_dispatch"}]
     if not runs:
         restore_latest_rules(base, token)
-        print("No previous successful build on this branch. Bootstrap preview.")
+        logger.info("No previous successful build on this branch. Bootstrap preview.")
         return
     for run in runs:
         artifacts = get(base + f"/actions/runs/{run['id']}/artifacts?per_page=100", token)["artifacts"]
@@ -111,7 +121,7 @@ def main():
             output.parent.mkdir(exist_ok=True)
             write_json(output, data)
             restore_latest_rules(base, token)
-            print(f"Restored baseline from successful run {run['id']}")
+            logger.info(f"Restored baseline from successful run {run['id']}")
             return
     raise BuildError("Previous builds exist but no usable manifest remains; review and explicitly reset the baseline")
 
@@ -120,5 +130,5 @@ if __name__ == "__main__":
     try:
         main()
     except (BuildError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
-        print(f"BASELINE FAILED: {exc}", file=sys.stderr)
+        logger.error("BASELINE FAILED: %s", exc)
         raise SystemExit(1)

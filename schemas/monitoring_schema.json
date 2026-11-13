@@ -1,108 +1,22 @@
-## Monitoring
-
-Monitoring schema for validation.
-
----
-
-```json
 {
   "$schema": "https://json-schema.org/draft-2020-12/schema",
-  "title": "Monitoring",
+  "title": "Monitoring configuration",
   "type": "object",
+  "required": ["schema_version", "provider", "targets"],
   "properties": {
-    "schema_version": {
-      "type": "integer",
-      "description": "Schema version for compatibility.",
-      "example": 1
-    },
-    "updated_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "Last update timestamp.",
-      "example": "2026-11-12T12:34:56Z"
-    },
-    "probes": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "target": {
-            "type": "string",
-            "description": "Target domain for the probe.",
-            "example": "example.com"
-          },
-          "status": {
-            "type": "string",
-            "description": "Probe status (e.g., blocked_or_geo, ok).",
-            "example": "blocked_or_geo"
-          },
-          "http_status": {
-            "type": "integer",
-            "description": "HTTP status code.",
-            "example": 403
-          },
-          "error": {
-            "type": ["string", "null"],
-            "description": "Error message if any.",
-            "example": null
-          },
-          "raw_output": {
-            "type": "string",
-            "description": "Raw output from the probe.",
-            "example": "..."
-          },
-          "probe_count": {
-            "type": "integer",
-            "description": "Number of probes.",
-            "example": 2
-          },
-          "probe_statuses": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "description": "Statuses from all probes.",
-              "example": "blocked_or_geo"
-            }
-          },
-          "probes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "probe": {
-                  "type": "string",
-                  "description": "Probe identifier.",
-                  "example": "globalping"
-                },
-                "location": {
-                  "type": "string",
-                  "description": "Probe location.",
-                  "example": "DE"
-                },
-                "status": {
-                  "type": "string",
-                  "description": "Probe status.",
-                  "example": "blocked_or_geo"
-                },
-                "http_status": {
-                  "type": "integer",
-                  "description": "HTTP status code.",
-                  "example": 403
-                },
-                "error": {
-                  "type": ["string", "null"],
-                  "description": "Error message if any.",
-                  "example": null
-                }
-              },
-              "required": ["probe", "location", "status", "http_status", "error"]
-            }
-          }
-        },
-        "required": ["target", "status", "http_status", "error", "raw_output", "probe_count", "probe_statuses", "probes"]
+    "schema_version": {"const": 1},
+    "description": {"type": "string"},
+    "provider": {
+      "type": "object",
+      "required": ["name", "url", "country", "probes_per_target", "timeout_seconds"],
+      "properties": {
+        "name": {"type": "string"},
+        "url": {"type": "string", "pattern": "^https://"},
+        "country": {"type": "string", "minLength": 2, "maxLength": 2},
+        "probes_per_target": {"type": "integer", "minimum": 1, "maximum": 10},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600}
       }
-    }
-  },
-  "required": ["schema_version", "updated_at", "probes"]
+    },
+    "targets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
 }
-```

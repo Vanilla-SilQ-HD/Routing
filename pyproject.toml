@@ -14,8 +14,29 @@ known-first-party = ["build", "report", "service_networks"]
 
 [tool.coverage.run]
 branch = true
-source = ["scripts"]
+source = ["scripts", "routing"]
 
 [tool.coverage.report]
 show_missing = true
 exclude_also = ["if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "routing-rules"
+version = "2.0.0"
+description = "Validated selective-routing rule sets for sing-box and AWG Manager"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["idna>=3.10,<4"]
+
+[tool.setuptools.packages.find]
+include = ["routing*", "scripts*"]
+
+[tool.mypy]
+strict = true
+files = ["scripts", "routing"]
+explicit_package_bases = true
+ignore_missing_imports = true

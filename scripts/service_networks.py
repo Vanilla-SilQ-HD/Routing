@@ -4,9 +4,17 @@ from __future__ import annotations
 import datetime as dt
 import ipaddress
 import json
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+try:
+    from .errors import RoutingError
+except ImportError:
+    from errors import RoutingError  # type: ignore[no-redef]
 
 
-class ServiceNetworkError(ValueError):
+class ServiceNetworkError(RoutingError, ValueError):
     pass
 
 
@@ -21,25 +29,28 @@ SPECIAL_NETWORKS = {
 }
 
 
-def normalize_networks(networks):
+def normalize_networks(networks: Iterable[Any]) -> list[Any]:
     """Merge exact unions only, never approximate or widen the address space."""
     networks = list(networks)
     return [network for version in (4, 6)
             for network in ipaddress.collapse_addresses(n for n in networks if n.version == version)]
 
 
-def coverage(networks):
+def coverage(networks: Iterable[ipaddress.IPv4Network | ipaddress.IPv6Network]) -> dict[str, int]:
     networks = normalize_networks(networks)
     return {"total_prefixes": len(networks),
             **{f"ipv{version}_prefixes": sum(n.version == version for n in networks) for version in (4, 6)},
             **{f"ipv{version}_addresses": sum(n.num_addresses for n in networks if n.version == version) for version in (4, 6)}}
 
 
-def parse_networks(path, source, *, values=None):
-    if values is None and source["format"] != "cidr-lines":
-        raise ServiceNetworkError("Unsupported service network format")
+def parse_networks(path: Path | None, source: dict[str, Any], *, values: Iterable[str] | None = None) -> tuple[list[Any], dict[str, Any]]:
+    if values is None:
+        if source["format"] != "cidr-lines":
+            raise ServiceNetworkError("Unsupported service network format")
+        if path is None:
+            raise ServiceNetworkError("A source path is required when values are not provided")
     networks, records = set(), 0
-    for line in (values if values is not None else path.read_text(encoding="utf-8-sig").splitlines()):
+    for line in (values if values is not None else path.read_text(encoding="utf-8-sig").splitlines()):  # type: ignore[union-attr]
         if not isinstance(line, str):
             raise ServiceNetworkError("Service prefix must be a string")
         value = line.strip()
@@ -56,7 +67,7 @@ def parse_networks(path, source, *, values=None):
         if (not network.is_global or network.is_multicast or network.is_reserved
                 or network.is_loopback or network.is_link_local or network.is_unspecified
                 or any(network.overlaps(special) for special in SPECIAL_NETWORKS[network.version])
-                or (network.version == 6 and not network.subnet_of(ipaddress.ip_network("2000::/3")))
+                or (network.version == 6 and not network.subnet_of(ipaddress.ip_network("2000::/3")))  # type: ignore[arg-type]
                 or network.prefixlen < source[f"min_ipv{network.version}_prefix_length"]):
             raise ServiceNetworkError(f"Non-public or overly broad network in {source['id']}: {network}")
         networks.add(network)
@@ -76,13 +87,13 @@ def parse_networks(path, source, *, values=None):
                         "prefixes": [str(n) for n in normalized], "raw_prefixes": raw_prefixes, **stats}
 
 
-def intersection_size(left, right):
+def intersection_size(left: Iterable[Any], right: Iterable[Any]) -> int:
     return sum(int(min(a.broadcast_address, b.broadcast_address))
                - int(max(a.network_address, b.network_address)) + 1
                for a in left for b in right if a.version == b.version and a.overlaps(b))
 
 
-def validate_previous_services(previous, sources, policy):
+def validate_previous_services(previous: dict[str, Any] | None, sources: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str, Any]:
     previous = previous.get("service_networks") if previous else None
     if previous is None:
         return {"baseline": "first-service-build", "warnings": []}
@@ -111,7 +122,7 @@ def validate_previous_services(previous, sources, policy):
     return {"baseline": "previous-service-build", "warnings": []}
 
 
-def parse_ripe_source(source, fetched):
+def parse_ripe_source(source: dict[str, Any], fetched: dict[str, tuple[Path, dict[str, Any]]]) -> tuple[list[Any], dict[str, Any]]:
     path, metadata = fetched[source["id"]]
     identity_path, identity_metadata = fetched[source["identity_source"]["id"]]
     response = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -152,7 +163,7 @@ def parse_ripe_source(source, fetched):
                            identity=dict(identity_metadata, holder=identity["holder"]))
 
 
-def prepare_services(fetched, config, previous):
+def prepare_services(fetched: dict[str, tuple[Path, dict[str, Any]]], config: dict[str, Any], previous: dict[str, Any] | None) -> tuple[list[Any], dict[str, Any]]:
     if config.get("schema_version") != 1 or not config.get("sources"):
         raise ServiceNetworkError("Missing service source configuration")
     ids = [s["id"] for s in config["sources"]]
@@ -173,7 +184,7 @@ def prepare_services(fetched, config, previous):
     return networks, {"sources": stats, "validation": validation, "output": coverage(networks)}
 
 
-def restore_services(previous, config, max_stale_hours, now=None):
+def restore_services(previous: dict[str, Any] | None, config: dict[str, Any], max_stale_hours: float, now: dt.datetime | None = None) -> tuple[list[Any], dict[str, Any]]:
     if not previous or not isinstance(previous.get("service_networks"), dict):
         raise ServiceNetworkError("Service download failed and no previous complete service set is available")
     previous_services = previous["service_networks"]

@@ -8,6 +8,7 @@ import datetime as dt
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import subprocess
@@ -17,51 +18,63 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, cast
 
 import idna
 
-from report import make_report
-from service_networks import normalize_networks, parse_networks, prepare_services, restore_services
+try:
+    from .errors import RoutingError
+    from .logging_utils import configure_logging
+    from .report import make_report
+    from .service_networks import normalize_networks, parse_networks, prepare_services, restore_services
+except ImportError:
+    from errors import RoutingError  # type: ignore[no-redef]
+    from logging_utils import configure_logging  # type: ignore[no-redef]
+
+    from report import make_report  # type: ignore[no-redef]
+    from service_networks import normalize_networks, parse_networks, prepare_services, restore_services  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parents[1]
 USER_AGENT = "Routing/2 (public routing data only)"
+logger = logging.getLogger(__name__)
 ASCII_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 
 
-class BuildError(Exception):
+class BuildError(RoutingError):
     pass
 
 
-def utc_now():
+def utc_now() -> str:
     return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
-def sha256(data):
+def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def file_sha256(path):
+def file_sha256(path: str | Path) -> str:
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def read_json(path):
+def read_json(path: str | Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
-def write_json(path, value):
+def write_json(path: str | Path, value: Any) -> None:
     Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
         if urllib.parse.urlsplit(newurl).scheme != "https":
             raise BuildError("Refusing an HTTP downgrade redirect")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch_source(source, cache, offline=False):
+def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = False) -> tuple[Path, dict[str, Any]]:
     cache = Path(cache)
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / (source["id"] + ".data")
@@ -102,7 +115,7 @@ def fetch_source(source, cache, offline=False):
                 }
             os.replace(temporary, target)
             write_json(metadata_path, metadata)
-            print(f"Fetched {source['id']}: {size:,} bytes", flush=True)
+            logger.info(f"Fetched {source['id']}: {size:,} bytes")
             return target, metadata
         except (OSError, urllib.error.URLError, BuildError) as exc:
             error = exc
@@ -112,7 +125,7 @@ def fetch_source(source, cache, offline=False):
     raise BuildError(f"Cannot fetch required source {source['id']}: {error}")
 
 
-def normalize_domain(value):
+def normalize_domain(value: Any) -> str:
     """Canonical IDNA name; never turn a URL, IP or wildcard into a domain."""
     if not isinstance(value, str):
         raise ValueError("domain is not a string")
@@ -135,22 +148,25 @@ def normalize_domain(value):
             raise ValueError("invalid IDNA name") from exc
     if len(value) > 253 or any(not ASCII_LABEL.fullmatch(label) for label in value.split(".")):
         raise ValueError("invalid DNS labels")
-    return value
+    return cast(str, value)
 
 
-def parse_source(path, source, max_invalid_fraction, ip_networks=None):
-    exact, suffix, source_ips = set(), set(), set()
-    invalid, samples, records, ip_records = 0, [], 0, 0
-    invalid_reasons = collections.Counter()
+def parse_source(path: str | Path, source: dict[str, Any], max_invalid_fraction: float, ip_networks: set[Any] | None = None) -> tuple[set[str], set[str], dict[str, Any]]:
+    exact: set[str] = set()
+    suffix: set[str] = set()
+    source_ips: set[Any] = set()
+    invalid, records, ip_records = 0, 0, 0
+    samples: list[dict[str, str]] = []
+    invalid_reasons: collections.Counter[str] = collections.Counter()
 
-    def reject(value, reason):
+    def reject(value: Any, reason: str) -> None:
         nonlocal invalid
         invalid += 1
         invalid_reasons[reason] += 1
         if len(samples) < 30:
             samples.append({"value": str(value)[:200], "reason": reason})
 
-    def accept(value, kind):
+    def accept(value: Any, kind: str) -> None:
         nonlocal records, ip_records
         records += 1
         if kind == "domain_suffix" and isinstance(value, str):
@@ -216,8 +232,10 @@ def parse_source(path, source, max_invalid_fraction, ip_networks=None):
 
 
 class PublicSuffixes:
-    def __init__(self, text):
-        self.exact, self.wildcard, self.exceptions = set(), set(), set()
+    def __init__(self, text: str) -> None:
+        self.exact: set[str] = set()
+        self.wildcard: set[str] = set()
+        self.exceptions: set[str] = set()
         self.private_wildcard = set()
         private = False
         for line in text.splitlines():
@@ -239,17 +257,17 @@ class PublicSuffixes:
                 self.private_wildcard.add(normalized)
 
     @property
-    def count(self):
+    def count(self) -> int:
         return len(self.exact) + len(self.wildcard) + len(self.exceptions)
 
-    def is_public_suffix(self, name):
+    def is_public_suffix(self, name: str) -> bool:
         if name in self.exceptions:
             return False
         if "." not in name or name in self.exact:
             return True
         return name.partition(".")[2] in self.wildcard
 
-    def is_broad_routing_suffix(self, name):
+    def is_broad_routing_suffix(self, name: str) -> bool:
         # PRIVATE wildcard entries often isolate individual tenants' cookies.
         # e.g. *.eth.limo does NOT mean blocked-tenant.eth.limo covers all eth.limo.
         if name in self.private_wildcard:
@@ -259,14 +277,14 @@ class PublicSuffixes:
         return self.is_public_suffix(name)
 
 
-def parents(name):
+def parents(name: str) -> Iterator[str]:
     offset = name.find(".")
     while offset >= 0:
         yield name[offset + 1:]
         offset = name.find(".", offset + 1)
 
 
-def exclusion_reason(kind, name, shared, psl, service_owned=()):
+def exclusion_reason(kind: str, name: str, shared: dict[str, str], psl: PublicSuffixes, service_owned: Any = ()) -> str | None:
     if name in shared:
         return "shared-infrastructure: " + shared[name]
     if kind == "domain_suffix" and psl.is_broad_routing_suffix(name):
@@ -278,7 +296,7 @@ def exclusion_reason(kind, name, shared, psl, service_owned=()):
     return None
 
 
-def match_rule(name, exact, suffix):
+def match_rule(name: str, exact: Any, suffix: Any) -> tuple[str, str] | None:
     if name in exact:
         return "domain", name
     if name in suffix:
@@ -289,14 +307,14 @@ def match_rule(name, exact, suffix):
     return None
 
 
-def minimize(exact, suffix):
+def minimize(exact: dict[str, int], suffix: dict[str, int]) -> tuple[dict[str, int], dict[str, int]]:
     """Remove only rules covered by an existing suffix, without creating any new suffix."""
     minimal_suffix = {name: mask for name, mask in suffix.items() if not any(parent in suffix for parent in parents(name))}
     minimal_exact = {name: mask for name, mask in exact.items() if not match_rule(name, {}, suffix)}
     return minimal_exact, minimal_suffix
 
 
-def validate_previous(previous, stats, count, policy, now=None):
+def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any]], count: int, policy: dict[str, Any], now: dt.datetime | None = None) -> dict[str, Any]:
     if previous is None:
         return {"baseline": "first-build", "warnings": ["First build has no previous published version to compare."]}
     if previous.get("schema_version") != 1:
@@ -319,11 +337,15 @@ def validate_previous(previous, stats, count, policy, now=None):
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
-def read_manual_rules(path, psl, *, require_review=False, allow_ip=False, now=None):
+def read_manual_rules(path: str | Path, psl: PublicSuffixes, *, require_review: bool = False, allow_ip: bool = False, now: dt.date | None = None) -> tuple[dict[str, Any], dict[str, Any], list[Any], list[dict[str, Any]]]:
+    path = Path(path)
     data = read_json(path)
     if data.get("schema_version") != 1 or not isinstance(data.get("rules"), list):
         raise BuildError(f"Unexpected manual rule schema: {path.name}")
-    exact, suffix, ip_rules, records = {}, {}, [], []
+    exact: dict[str, Any] = {}
+    suffix: dict[str, Any] = {}
+    ip_rules: list[Any] = []
+    records: list[dict[str, Any]] = []
     for item in data["rules"]:
         if not isinstance(item, dict) or set(item) - {"kind", "domain", "reason", "review_after"}:
             raise BuildError(f"Unexpected manual rule fields in {path.name}")
@@ -361,8 +383,8 @@ def read_manual_rules(path, psl, *, require_review=False, allow_ip=False, now=No
     return exact, suffix, ip_rules, records
 
 
-def domain_groups(data):
-    groups = {"domain": set(), "domain_suffix": set()}
+def domain_groups(data: dict[str, Any]) -> dict[str, set[str]]:
+    groups: dict[str, set[str]] = {"domain": set(), "domain_suffix": set()}
     if set(data) != {"version", "rules"} or not isinstance(data["rules"], list):
         raise BuildError("Unexpected domain rule-set for semantic diff")
     for rule in data["rules"]:
@@ -375,15 +397,16 @@ def domain_groups(data):
     return groups
 
 
-def make_domain_diff(previous_rules, exact, suffix, original_exact, original_suffix, sources, limit=1000):
-    current = {"domain": set(exact), "domain_suffix": set(suffix)}
+def make_domain_diff(previous_rules: dict[str, Any] | None, exact: dict[str, int], suffix: dict[str, int], original_exact: dict[str, int], original_suffix: dict[str, int], sources: list[dict[str, Any]], limit: int = 1000) -> dict[str, Any]:
+    current: dict[str, set[str]] = {"domain": set(exact), "domain_suffix": set(suffix)}
+    previous: dict[str, set[str]]
     if previous_rules is None:
         previous = {"domain": set(), "domain_suffix": set()}
         baseline = "first-build"
     else:
         previous = domain_groups(previous_rules)
         baseline = "previous-successful-or-approved-manifest"
-    changes = {"baseline": baseline, "observed_at": utc_now(), "sample_limit": limit, "by_kind": {}}
+    changes: dict[str, Any] = {"baseline": baseline, "observed_at": utc_now(), "sample_limit": limit, "by_kind": {}}
     for kind in ("domain", "domain_suffix"):
         added = sorted(current[kind] - previous[kind])
         removed = sorted(previous[kind] - current[kind])
@@ -392,7 +415,7 @@ def make_domain_diff(previous_rules, exact, suffix, original_exact, original_suf
             "added_sample": added[:limit], "removed_sample": removed[:limit],
         }
     added_names = set().union(*(set(current[kind]) - set(previous[kind]) for kind in current))
-    masks = collections.Counter()
+    masks: collections.Counter[int] = collections.Counter()
     for name in added_names:
         mask = original_exact.get(name, 0) | original_suffix.get(name, 0)
         for parent in parents(name):
@@ -415,17 +438,48 @@ def make_domain_diff(previous_rules, exact, suffix, original_exact, original_suf
     return changes
 
 
-def exact_networks(networks):
+def exact_networks(networks: Any) -> list[Any]:
     return sorted(set(networks), key=lambda n: (n.version, int(n.network_address), n.prefixlen))
 
 
-def validate_registry(previous, networks, policy, now=None, section="registry_ip"):
+def prune_cache(cache: str | Path, *, max_age_days: int = 30, max_bytes: int = 1024 ** 3, now: float | None = None) -> dict[str, int]:
+    """Delete expired source files, then oldest files until the cache fits its budget."""
+    root = Path(cache)
+    if not root.exists():
+        return {"removed_files": 0, "removed_bytes": 0}
+    current_time = time.time() if now is None else now
+    files = [path for path in root.iterdir() if path.is_file()]
+    expired = [path for path in files if current_time - path.stat().st_mtime > max_age_days * 86400]
+    removed_files, removed_bytes = 0, 0
+
+    def remove(path: Path) -> None:
+        nonlocal removed_files, removed_bytes
+        size = path.stat().st_size
+        path.unlink()
+        removed_files += 1
+        removed_bytes += size
+        logger.info("Removed cached source %s (%d bytes)", path.name, size)
+
+    for path in expired:
+        remove(path)
+    remaining = [path for path in files if path.exists()]
+    total = sum(path.stat().st_size for path in remaining)
+    for path in sorted(remaining, key=lambda item: item.stat().st_mtime):
+        if total <= max_bytes:
+            break
+        size = path.stat().st_size
+        remove(path)
+        total -= size
+    return {"removed_files": removed_files, "removed_bytes": removed_bytes}
+
+
+def validate_registry(previous: dict[str, Any] | None, networks: list[Any], policy: dict[str, Any], now: dt.datetime | None = None, section: str = "registry_ip") -> dict[str, Any]:
     current = {str(network) for network in networks}
     registry = previous.get(section) if previous else None
     if not registry:
         return {"baseline": "first-registry-build", "warnings": []}
     source_ids = {source.get("id") for source in registry.get("sources", [])}
-    if section == "registry_ip" and previous.get("registry_cidr") is None and source_ids == {"antifilter-full", "refilter"}:
+    if section == "registry_ip" and previous is not None and previous.get("registry_cidr") is None and source_ids == {"antifilter-full", "refilter"}:
         return {"baseline": "first-registry-build", "warnings": []}
     old = set(registry["output"]["prefixes"])
     removed, added = old - current, current - old
@@ -436,21 +490,26 @@ def validate_registry(previous, networks, policy, now=None, section="registry_ip
             "added": len(added), "removed": len(removed)}
 
 
-def compile_and_verify(directory, executable, source_format_version, basename="blocked-domains", networks_only=False):
+def compile_and_verify(directory: Path, executable: Path, source_format_version: int, basename: str = "blocked-domains", networks_only: bool = False) -> dict[str, Any]:
     version = subprocess.run([str(executable), "version"], capture_output=True, text=True, check=True, timeout=15).stdout.splitlines()[0]
     source, binary, decoded = (directory / name for name in (basename + ".json", basename + ".srs", "roundtrip.json"))
     subprocess.run([str(executable), "rule-set", "compile", "--output", str(binary), str(source)], check=True, capture_output=True, text=True, timeout=180)
     subprocess.run([str(executable), "rule-set", "decompile", "--output", str(decoded), str(binary)], check=True, capture_output=True, text=True, timeout=180)
     original, result = read_json(source), read_json(decoded)
-    def conditions(data):
+    def conditions(data: dict[str, Any]) -> Any:
         if networks_only:
-            networks = []
+            networks: list[Any] = []
             for rule in data.get("rules", []):
-                if set(rule) != {"ip_cidr"} or not isinstance(rule["ip_cidr"], list) or not rule["ip_cidr"]:
-                    raise BuildError("Compiler roundtrip introduced a non-CIDR or empty condition")
-                networks.extend(ipaddress.ip_network(n, strict=True) for n in rule["ip_cidr"])
+                if set(rule) != {"ip_cidr"}:
+                    raise BuildError("Compiler roundtrip introduced a non-CIDR condition")
+                values = rule["ip_cidr"]
+                if isinstance(values, str):
+                    values = [values]
+                if not isinstance(values, list) or not values:
+                    raise BuildError("Compiler roundtrip introduced an empty CIDR condition")
+                networks.extend(ipaddress.ip_network(n, strict=True) for n in values)
             return normalize_networks(networks)
-        groups = {"domain": set(), "domain_suffix": set(), "ip_cidr": set()}
+        groups: dict[str, set[Any]] = {"domain": set(), "domain_suffix": set(), "ip_cidr": set()}
         for rule in data.get("rules", []):
             if set(rule) - groups.keys():
                 raise BuildError("Compiler roundtrip introduced a non-domain condition")
@@ -477,7 +536,7 @@ def compile_and_verify(directory, executable, source_format_version, basename="b
             "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False}
 
 
-def build(args):
+def build(args: Any) -> None:
     started = time.monotonic()
     root = Path(args.root).resolve()
     sources_config = read_json(root / "config/sources.json")
@@ -494,8 +553,10 @@ def build(args):
     if len({s["id"] for s in all_sources}) != len(all_sources):
         raise BuildError("Duplicate input source ID")
     cache = root / "cache/sources"
+    if not args.offline:
+        logger.info("Cache maintenance: %s", prune_cache(cache, max_age_days=getattr(args, "cache_max_age_days", 30), max_bytes=getattr(args, "cache_max_bytes", 1024 ** 3)))
     fetched, service_errors = {}, {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=getattr(args, "max_workers", 3)) as pool:
         futures = {s["id"]: pool.submit(fetch_source, s, cache, args.offline) for s in all_sources}
         for key, future in futures.items():
             try:
@@ -507,7 +568,7 @@ def build(args):
     if args.fetch_only:
         if service_errors:
             raise BuildError(f"Cannot cache every service input: {service_errors}")
-        print("All required public inputs cached and hashed. No compilation performed.")
+        logger.info("All required public inputs cached and hashed. No compilation performed.")
         return
     if service_errors:
         if args.offline:
@@ -526,8 +587,11 @@ def build(args):
     manual_exact, manual_suffix, _, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
     direct_exact, direct_suffix, direct_ip_rules, direct_records = read_manual_rules(
         root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True)
-    exact, suffix, exclusions = {}, {}, {}
-    core_exact, core_suffix = {}, {}
+    exact: dict[str, int] = {}
+    suffix: dict[str, int] = {}
+    exclusions: dict[tuple[str, str], dict[str, Any]] = {}
+    core_exact: dict[str, int] = {}
+    core_suffix: dict[str, int] = {}
     core_excluded = set(sources_config.get("core_excluded_sources", []))
     stats, total_conditions, skipped = [], 0, 0
     domain_registry_ips = []
@@ -535,8 +599,9 @@ def build(args):
     service_owned = {normalize_domain(name) for name in policy.get("service_owned_suffixes", {})}
     if shared.keys() & service_owned:
         raise BuildError("A domain cannot be both shared infrastructure and a service-owned exception")
+    names: Any
     for i, source in enumerate(sources):
-        source_ips = set()
+        source_ips: set[Any] = set()
         source_exact, source_suffix, parsed = parse_source(
             fetched[source["id"]][0], source, policy["validation"]["max_invalid_fraction"], source_ips)
         for network in source_ips:
@@ -564,8 +629,8 @@ def build(args):
         metadata["filtered_conditions"] = rejected_here
         stats.append(metadata)
         skipped += rejected_here
-        print(f"Parsed {source['id']}: {parsed['unique_conditions']:,} conditions, "
-              f"{parsed['ip_addresses']} exact IPs, {rejected_here} broad rules excluded", flush=True)
+        logger.info(f"Parsed {source['id']}: {parsed['unique_conditions']:,} conditions, "
+              f"{parsed['ip_addresses']} exact IPs, {rejected_here} broad rules excluded")
     manual_mask = 1 << len(sources)
     for kind, names, merged in (("domain", manual_exact, exact), ("domain_suffix", manual_suffix, suffix)):
         for name in names:
@@ -591,7 +656,8 @@ def build(args):
         if any(not match_rule(name, exact, suffix) for name in names):
             raise BuildError("Minimization lost an input condition")
     validation = validate_previous(previous, stats, count, policy)
-    registry_by_network, registry_cidr_by_network = {}, {}
+    registry_by_network: dict[Any, int] = {}
+    registry_cidr_by_network: dict[Any, int] = {}
     registry_source_stats = []
     for i, source in enumerate(registry_config["sources"]):
         _, parsed = parse_networks(fetched[source["id"]][0], source)
@@ -715,7 +781,10 @@ def build(args):
         write_json(stage / "probes.json", probes)
         write_json(stage / "domain-changes.json", domain_diff)
         write_json(stage / "manual-rules.json", {"vpn": manual_records, "direct_exceptions": direct_records})
-        recipe_paths = list((root / "config").glob("*.json")) + list((root / "scripts").glob("*.py")) + [root / "requirements.txt", root / ".github/workflows/build.yml"]
+        recipe_paths = list((root / "config").glob("*.json")) + list((root / "scripts").glob("*.py"))
+        recipe_paths += list((root / "schemas").glob("*.json")) + list((root / "routing").glob("*.py"))
+        recipe_paths += [root / "requirements.txt", root / "requirements-dev.txt", root / "pyproject.toml", root / ".github/workflows/build.yml"]
+        recipe_paths = [path for path in recipe_paths if path.is_file()]
         config_hashes = {str(path.relative_to(root)).replace(os.sep, "/"): file_sha256(path) for path in sorted(recipe_paths)}
         source_bits = collections.Counter(mask for mask in original_exact.values())
         source_bits.update(original_suffix.values())
@@ -800,13 +869,13 @@ def build(args):
         if target.exists():
             target.rmdir()
         stage.rename(target)
-    print(json.dumps({"output": str(target), "domains": count, "service_networks": service_manifest["output"],
+    logger.info(json.dumps({"output": str(target), "domains": count, "service_networks": service_manifest["output"],
                       "registry_ip": registry_output, "direct_exceptions": len(direct_records),
                       "srs_bytes": manifest["output"]["srs_bytes"], "excluded_broad_conditions": len(excluded),
-                      "validation": compilation}, ensure_ascii=False), flush=True)
+                      "validation": compilation}, ensure_ascii=False))
 
 
-def make_presets(release_base):
+def make_presets(release_base: str) -> dict[str, Any]:
     rule_urls = {
         "routing": "blocked-domains.srs",
         "routing-core": "blocked-domains-core.srs",
@@ -831,7 +900,7 @@ def make_presets(release_base):
     return {"presets": presets}
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=str(ROOT))
     parser.add_argument("--offline", action="store_true", help="Replay only SHA-256-verified cached inputs; no network")
@@ -840,13 +909,20 @@ def main():
     parser.add_argument("--previous-rules", help="Previous blocked-domains.json for the semantic diff")
     parser.add_argument("--output", help="A new, empty output directory")
     parser.add_argument("--sing-box", help="Path to the pinned sing-box compiler")
+    parser.add_argument("--max-workers", type=int, default=3, choices=range(1, 17), metavar="1..16")
+    parser.add_argument("--cache-max-age-days", type=int, default=30)
+    parser.add_argument("--cache-max-bytes", type=int, default=1024 ** 3)
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+    configure_logging(args.debug)
+    if args.cache_max_age_days < 1 or args.cache_max_bytes < 1:
+        parser.error("cache limits must be positive")
     try:
         build(args)
     except (BuildError, ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        print(f"BUILD FAILED: {exc}", file=sys.stderr)
+        logger.error("BUILD FAILED: %s", exc)
         if isinstance(exc, subprocess.CalledProcessError):
-            print(exc.stderr or "", file=sys.stderr)
+            logger.error("%s", exc.stderr or "")
         raise SystemExit(1)
 
 

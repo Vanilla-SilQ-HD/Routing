@@ -4,6 +4,9 @@
 
 <p align="center">
   <a href="https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml"><img src="https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/build.yml/badge.svg" alt="Сборка"></a>
+  <a href="https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/codeql.yml"><img src="https://github.com/Vanilla-SilQ-HD/Routing/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://github.com/Vanilla-SilQ-HD/Routing/releases/latest"><img src="https://img.shields.io/github/v/release/Vanilla-SilQ-HD/Routing?display_name=tag" alt="Последний релиз"></a>
+  <img src="https://img.shields.io/badge/coverage-%E2%89%A575%25-brightgreen" alt="Покрытие тестами не ниже 75%">
   <a href="https://vanilla-silq-hd.github.io/Routing/"><img src="https://img.shields.io/endpoint?url=https://vanilla-silq-hd.github.io/Routing/status.json" alt="Доменных условий"></a>
   <a href="https://vanilla-silq-hd.github.io/Routing/"><img src="https://img.shields.io/endpoint?url=https://vanilla-silq-hd.github.io/Routing/updated.json" alt="Обновлено"></a>
   <img src="https://img.shields.io/badge/sing--box-1.14.4-546e7a" alt="sing-box 1.14.4">
@@ -12,6 +15,17 @@
 Автообновляемые наборы для **sing-box** и **AWG Manager**: заблокированные и недоступные в России ресурсы — через VPN, остальной трафик — напрямую.
 
 [Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/) · [Мониторинг](https://vanilla-silq-hd.github.io/Routing/monitoring.html) · [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json)
+
+## Быстрый старт
+
+Собирать проект не нужно: готовые наборы уже опубликованы и обновляются автоматически.
+
+1. Выберите профиль **Full** или **Compact** в [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json).
+2. Подключите удалённые наборы по инструкции ниже и направьте их в свой VPN-outbound.
+3. Добавьте `routing-direct-exceptions` с действием **Direct** выше VPN-правила.
+4. Оставьте маршрут по умолчанию **Direct** и [проверьте результат](#4-проверьте-результат).
+
+Для разработки и собственного форка см. [руководство по сборке](docs/BUILD.md), [CLI](docs/CLI.md) и [пользовательское руководство](docs/USER_GUIDE.md).
 
 ## Подключение к AWG Manager
 
@@ -192,6 +206,8 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 | `blocked-registry-ip-cidr.srs` | Необязательные широкие CIDR с сохранением исходных границ |
 | `routing-direct-exceptions.srs` | Подтверждённые ложные и устаревшие срабатывания с датой пересмотра |
 
+Размеры и полные SHA-256 каждого набора опубликованы в описании [последнего релиза](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest). Для проверки используйте пару `<имя>.srs` + `<имя>.srs.sha256` или общий файл [SHA256SUMS](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/SHA256SUMS).
+
 ### Источники доменов
 
 - [Antifilter](https://antifilter.download/list/domains.lst) и [Antifilter community](https://community.antifilter.download/list/domains.lst);
@@ -232,12 +248,14 @@ GitHub Actions проверяет источники четыре раза в с
 
 Перед публикацией выполняются:
 
-- unit-тесты и обязательные ожидания VPN/Direct;
-- компиляция и обратное чтение всех SRS;
-- `sing-box check` и проверка контрольных сумм;
-- semantic diff в `domain-changes.json`, включая фактически потерянное покрытие.
+- Ruff, strict mypy, Bandit и CodeQL;
+- JSON Schema всех конфигурационных файлов;
+- unit- и интеграционные тесты с branch coverage не ниже 75%;
+- обязательные ожидания VPN/Direct, компиляция и обратное чтение всех SRS;
+- `sing-box check`, semantic diff и контрольные суммы;
+- проверка catalog и пресетов AWG Manager.
 
-Новый релиз появляется при изменении набора или рецепта; постоянные URL остаются прежними. При ошибке обязательного доменного источника предыдущий релиз сохраняется. При сбое Telegram/RIPE допускается только полный проверенный сервисный набор не старше 24 часов, никогда — частичный.
+Новый релиз появляется при изменении набора или рецепта; постоянные URL остаются прежними. При ошибке обязательного доменного источника предыдущий релиз сохраняется. При сбое Telegram/RIPE допускается только полный проверенный сервисный набор не старше 24 часов, никогда — частичный. После публикации сохраняются Latest и пять более новых старых релизов.
 
 [Интерактивный Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/) показывает источники, маршруты probes, изменения покрытия и результаты проверок. Исходники правил и диагностические файлы дополнительно собираются в `routing-evidence.zip`.
 
@@ -252,6 +270,9 @@ GitHub Actions проверяет источники четыре раза в с
 
 ## Документация
 
+- [Руководство пользователя](docs/USER_GUIDE.md)
 - [Сборка, измерение памяти и сопровождение](docs/BUILD.md)
+- [CLI и проверки качества](docs/CLI.md)
+- [Форматы данных](docs/DATA_FORMATS.md)
 - [IP-источники и охват](docs/IP-COVERAGE.md)
 - [Последний релиз, manifest и отчёты](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest)

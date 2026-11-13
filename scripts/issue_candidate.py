@@ -5,15 +5,25 @@ import argparse
 import datetime as dt
 import ipaddress
 import json
+import logging
 import os
 import re
 import urllib.request
 from pathlib import Path
+from typing import Any
 
-from build import normalize_domain, write_json
+try:
+    from .build import normalize_domain, write_json
+    from .logging_utils import configure_logging
+except ImportError:
+    from logging_utils import configure_logging  # type: ignore[no-redef]
+
+    from build import normalize_domain, write_json  # type: ignore[no-redef]
+
+logger = logging.getLogger(__name__)
 
 
-def sections(body):
+def sections(body: str) -> dict[str, str]:
     matches = list(re.finditer(r"(?im)^###\s+(.+?)\s*$", body))
     result = {}
     for index, match in enumerate(matches):
@@ -22,7 +32,7 @@ def sections(body):
     return result
 
 
-def expected_route(issue):
+def expected_route(issue: dict[str, Any]) -> str:
     fields = sections(issue.get("body", ""))
     expected = fields.get("ожидаемый маршрут", fields.get("expected", "")).strip().lower()
     actual = fields.get("фактический маршрут", fields.get("actual", "")).strip().lower()
@@ -34,7 +44,7 @@ def expected_route(issue):
     return expected
 
 
-def candidate_from_issue(issue):
+def candidate_from_issue(issue: dict[str, Any]) -> dict[str, str]:
     expected_route(issue)
     fields = sections(issue.get("body", ""))
     lines = fields.get("resource", "").splitlines()
@@ -53,7 +63,7 @@ def candidate_from_issue(issue):
     return {"kind": kind, "domain": domain, "reason": reason, "review_after": review_after}
 
 
-def markdown(candidate, issue):
+def markdown(candidate: dict[str, str], issue: dict[str, Any]) -> str:
     if expected_route(issue) == "vpn" and candidate["kind"] == "ip_cidr":
         return (f"Точный IP `{candidate['domain']}` требует ручной проверки: автоматическое добавление "
                 f"IP-адресов в VPN-набор не поддерживается. После подтверждения владельца сети и маршрута "
@@ -66,13 +76,14 @@ def markdown(candidate, issue):
             f"Источник: {issue['html_url']}\n")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", default=os.environ.get("GITHUB_EVENT_PATH"))
     parser.add_argument("--output", default="candidate.json")
     parser.add_argument("--markdown", default="candidate.md")
     parser.add_argument("--comment", action="store_true")
     args = parser.parse_args()
+    configure_logging()
     event = json.loads(Path(args.event).read_text(encoding="utf-8"))
     issue = event["issue"]
     candidate = candidate_from_issue(issue)
@@ -89,7 +100,7 @@ def main():
             method="POST")
         with urllib.request.urlopen(request, timeout=30):
             pass
-    print(json.dumps(candidate, ensure_ascii=False), flush=True)
+    logger.info(json.dumps(candidate, ensure_ascii=False))
 
 
 if __name__ == "__main__":

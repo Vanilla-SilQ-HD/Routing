@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 DATASETS = (
     ("blocked-domains", "Домены · Full", "Полная база для маршрутизации и DNS"),
@@ -13,7 +14,7 @@ DATASETS = (
 )
 
 
-def make_report(manifest, exclusions, probes):
+def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], probes: list[dict[str, Any]]) -> str:
     repository = manifest["environment"].get("repository", "Vanilla-SilQ-HD/Routing")
     owner, project = repository.split("/", 1)
     release_base = f"https://github.com/{repository}/releases/latest/download/"

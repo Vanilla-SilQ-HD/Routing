@@ -5,21 +5,29 @@ import argparse
 import datetime as dt
 import html
 import json
+import logging
 import os
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any, cast
+
+try:
+    from .logging_utils import configure_logging
+except ImportError:
+    from logging_utils import configure_logging  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parents[1]
 USER_AGENT = "Routing-Monitor/1 (public availability checks)"
+logger = logging.getLogger(__name__)
 
 
-def utc_now():
+def utc_now() -> str:
     return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
-def request_json(url, *, payload=None, timeout=30):
+def request_json(url: str, *, payload: dict[str, Any] | None = None, timeout: float = 30) -> Any:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(url, data=data, headers={
         "User-Agent": USER_AGENT, "Accept": "application/json",
@@ -33,7 +41,7 @@ def request_json(url, *, payload=None, timeout=30):
         raise RuntimeError(f"Globalping HTTP {exc.code}: {detail}") from exc
 
 
-def create_measurement(config, target):
+def create_measurement(config: dict[str, Any], target: str) -> Any:
     provider = config["provider"]
     return request_json(provider["url"], payload={
         "limit": provider["probes_per_target"],
@@ -48,7 +56,7 @@ def create_measurement(config, target):
     })
 
 
-def wait_for_measurement(config, measurement_id):
+def wait_for_measurement(config: dict[str, Any], measurement_id: str) -> Any:
     started = time.monotonic()
     url = config["provider"]["url"] + "/" + measurement_id
     while time.monotonic() - started < config["provider"]["timeout_seconds"]:
@@ -59,7 +67,7 @@ def wait_for_measurement(config, measurement_id):
     raise TimeoutError(f"Globalping measurement timed out: {measurement_id}")
 
 
-def classify_result(result):
+def classify_result(result: dict[str, Any]) -> str:
     nested = result.get("result", {})
     status_code = result.get("statusCode", nested.get("statusCode"))
     status = result.get("status", nested.get("status", "unknown"))
@@ -78,14 +86,14 @@ def classify_result(result):
     return "down_or_error"
 
 
-def load_previous(url):
+def load_previous(url: str) -> dict[str, Any]:
     try:
-        return request_json(url)
+        return cast(dict[str, Any], request_json(url))
     except (OSError, ValueError, RuntimeError, urllib.error.URLError):
-        return {"history": []}
+        return cast(dict[str, Any], {"history": []})
 
 
-def summarize_results(target, results):
+def summarize_results(target: str, results: list[dict[str, Any]]) -> dict[str, Any]:
     observations = []
     for result in results:
         nested = result.get("result", {})
@@ -110,7 +118,7 @@ def summarize_results(target, results):
     }
 
 
-def run_probe(config, target):
+def run_probe(config: dict[str, Any], target: str) -> dict[str, Any]:
     try:
         created = create_measurement(config, target)
         measurement = wait_for_measurement(config, created["id"])
@@ -124,8 +132,8 @@ def run_probe(config, target):
                 "probe_statuses": [], "observations": []}
 
 
-def html_report(data):
-    def esc(value):
+def html_report(data: dict[str, Any]) -> str:
+    def esc(value: Any) -> str:
         return html.escape(str(value), quote=True)
 
     latest = data["history"][-1]["results"] if data["history"] else []
@@ -151,14 +159,16 @@ def html_report(data):
 </body></html>"""
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--debug", action="store_true")
     parser.add_argument("--config", default=str(ROOT / "config/monitoring.json"))
     parser.add_argument("--pages-url", default="https://vanilla-silq-hd.github.io/Routing/monitoring.json")
     parser.add_argument("--output", required=True)
     parser.add_argument("--html", required=True)
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
+    configure_logging(args.debug)
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     previous = load_previous(args.pages_url)
     history = previous.get("history", [])[-29:]
@@ -175,7 +185,7 @@ def main():
     }
     Path(args.output).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     Path(args.html).write_text(html_report(data), encoding="utf-8")
-    print(json.dumps({"measurements": len(history), "latest": history[-1]["results"] if history else []}, ensure_ascii=False), flush=True)
+    logger.info(json.dumps({"measurements": len(history), "latest": history[-1]["results"] if history else []}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

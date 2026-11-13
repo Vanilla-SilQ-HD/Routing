@@ -1,52 +1,24 @@
-## Manual VPN
-
-Manual VPN schema for validation.
-
----
-
-```json
 {
   "$schema": "https://json-schema.org/draft-2020-12/schema",
-  "title": "Manual VPN",
+  "title": "Manual VPN rules",
   "type": "object",
+  "required": ["schema_version", "rules"],
   "properties": {
-    "schema_version": {
-      "type": "integer",
-      "description": "Schema version for compatibility.",
-      "example": 1
-    },
+    "schema_version": {"const": 1},
+    "description": {"type": "string"},
     "rules": {
       "type": "array",
       "items": {
         "type": "object",
+        "required": ["kind", "domain", "reason"],
+        "additionalProperties": false,
         "properties": {
-          "kind": {
-            "type": "string",
-            "enum": ["domain", "domain_suffix"],
-            "description": "Rule type.",
-            "example": "domain"
-          },
-          "domain": {
-            "type": "string",
-            "description": "Domain name.",
-            "example": "example.com"
-          },
-          "reason": {
-            "type": "string",
-            "description": "Reason for the rule.",
-            "example": "Service is blocked in the region"
-          },
-          "review_after": {
-            "type": "string",
-            "format": "date",
-            "description": "Review date.",
-            "example": "2026-12-12"
-          }
-        },
-        "required": ["kind", "domain", "reason", "review_after"]
+          "kind": {"enum": ["domain", "domain_suffix"]},
+          "domain": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "review_after": {"type": "string", "format": "date"}
+        }
       }
     }
-  },
-  "required": ["schema_version", "rules"]
+  }
 }
-```

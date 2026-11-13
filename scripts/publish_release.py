@@ -5,6 +5,7 @@ Only GitHub Releases APIs are used. No router access or third-party actions.
 import argparse
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -14,9 +15,19 @@ import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Any, cast
+
+try:
+    from .errors import RoutingError
+    from .logging_utils import configure_logging
+except ImportError:
+    from errors import RoutingError  # type: ignore[no-redef]
+    from logging_utils import configure_logging  # type: ignore[no-redef]
+
+logger = logging.getLogger(__name__)
 
 
-class PublishError(Exception):
+class PublishError(RoutingError):
     pass
 
 
@@ -34,16 +45,16 @@ EVIDENCE_FILES += ["excluded.json", "probes.json", "domain-changes.json", "manua
 MAX_ASSET_BYTES = 128 * 1024 * 1024
 
 
-def sha256(path):
+def sha256(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def json_bytes(value):
+def json_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
-def parse_checksums(text, expected):
+def parse_checksums(text: str, expected: set[str]) -> dict[str, str]:
     result = {}
     for line in text.splitlines():
         match = re.fullmatch(r"([a-f0-9]{64})  ([A-Za-z0-9][A-Za-z0-9_.-]*)", line)
@@ -55,13 +66,13 @@ def parse_checksums(text, expected):
     return result
 
 
-def initial_baseline_allowed(latest_release, reset_baseline, event):
+def initial_baseline_allowed(latest_release: dict[str, Any] | None, reset_baseline: bool, event: str) -> bool:
     if reset_baseline and event != "workflow_dispatch":
         raise PublishError("Baseline reset requires an explicit manual workflow run")
     return latest_release is None or reset_baseline
 
 
-def verify_compiler(compiler, lock):
+def verify_compiler(compiler: Any, lock: dict[str, Any]) -> None:
     if (not isinstance(compiler, dict)
             or compiler.get("version") != "sing-box version " + lock["sing_box_version"]
             or compiler.get("source_format_version") != lock["source_format_version"]
@@ -70,7 +81,7 @@ def verify_compiler(compiler, lock):
         raise PublishError("Compiler validation is missing or failed")
 
 
-def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
+def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_baseline: bool = False, allow_offline: bool = False) -> dict[str, Any]:
     if {p.name for p in directory.iterdir()} != BUILD_FILES | {"SHA256SUMS"}:
         raise PublishError("Unexpected build artifact inventory")
     for path in directory.iterdir():
@@ -81,12 +92,14 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
         if sha256(directory / name) != expected:
             raise PublishError(f"Build checksum mismatch: {name}")
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    if manifest["schema_version"] != 1 or manifest["offline_replay"] is not False:
+    if manifest["schema_version"] != 1 or (manifest["offline_replay"] is not False and not allow_offline):
         raise PublishError("Release must be a fresh online build with a supported manifest")
     if manifest["environment"]["github_commit"] != commit:
         raise PublishError("Artifact was built from a different commit")
     recipe_paths = list((root / "config").glob("*.json")) + list((root / "scripts").glob("*.py"))
-    recipe_paths += [root / "requirements.txt", root / ".github/workflows/build.yml"]
+    recipe_paths += list((root / "schemas").glob("*.json")) + list((root / "routing").glob("*.py"))
+    recipe_paths += [root / "requirements.txt", root / "requirements-dev.txt", root / "pyproject.toml", root / ".github/workflows/build.yml"]
+    recipe_paths = [path for path in recipe_paths if path.is_file()]
     recipe = {p.relative_to(root).as_posix(): sha256(p) for p in recipe_paths}
     if manifest["configuration_sha256"] != recipe:
         raise PublishError("Artifact recipe does not match this checkout")
@@ -176,15 +189,15 @@ def verify_candidate(directory, root, commit, *, allow_initial_baseline=False):
     verify_compiler(direct.get("compiler"), lock)
     validation = manifest["validation"]
     if validation["baseline"] == "first-build":
-        expected = ["First build has no previous published version to compare."]
-        if not allow_initial_baseline or validation["warnings"] != expected:
+        expected_warnings = ["First build has no previous published version to compare."]
+        if not allow_initial_baseline or validation["warnings"] != expected_warnings:
             raise PublishError("Initial baseline requires a first release or an explicit manual reset")
     elif validation["baseline"] != "previous-successful-or-approved-manifest" or validation["warnings"]:
         raise PublishError("Build has an unknown baseline or unresolved validation warnings")
-    return manifest
+    return cast(dict[str, Any], manifest)
 
 
-def fingerprint(manifest):
+def fingerprint(manifest: dict[str, Any]) -> str:
     # Fetch timestamps and provenance-only changes do not justify a new binary release.
     identity = {"schema_version": 1,
                 "srs_sha256": {name + ".srs": manifest["output"]["files"][name + ".srs"] for name in DATASETS},
@@ -192,7 +205,7 @@ def fingerprint(manifest):
     return hashlib.sha256(json_bytes(identity)).hexdigest()
 
 
-def prepare_assets(candidate, destination, manifest, repository, run_id, attempt):
+def prepare_assets(candidate: Path, destination: Path, manifest: dict[str, Any], repository: str, run_id: str, attempt: str, previous_release_tag: str | None = None) -> dict[str, Any]:
     destination.mkdir(parents=True, exist_ok=False)
     for name in ("manifest.json", "domain-changes.json", "catalog.json"):
         shutil.copyfile(candidate / name, destination / name)
@@ -209,6 +222,7 @@ def prepare_assets(candidate, destination, manifest, repository, run_id, attempt
             archive.writestr(info, (candidate / name).read_bytes())
     digest = manifest["output"]["files"]["blocked-domains.srs"]
     metadata = {"schema_version": 1, "fingerprint": fingerprint(manifest), "srs_sha256": digest,
+                "previous_release_tag": previous_release_tag,
                 "service_srs_sha256": manifest["output"]["files"]["blocked-services-ip.srs"],
                 "dataset_srs_sha256": {name: manifest["output"]["files"][name + ".srs"] for name in DATASETS},
                 "github_commit": manifest["environment"]["github_commit"], "built_at": manifest["built_at"],
@@ -220,7 +234,7 @@ def prepare_assets(candidate, destination, manifest, repository, run_id, attempt
 
 
 class CredentialSafeRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
         if urllib.parse.urlsplit(newurl).scheme != "https":
             raise PublishError("Refusing an insecure asset redirect")
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -230,12 +244,12 @@ class CredentialSafeRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class GitHub:
-    def __init__(self, repository, token):
+    def __init__(self, repository: str, token: str) -> None:
         self.repository, self.token = repository, token
         self.base = f"https://api.github.com/repos/{repository}"
         self.opener = urllib.request.build_opener(CredentialSafeRedirect())
 
-    def request(self, method, url, data=None, binary=False, limit=MAX_ASSET_BYTES, upload=False):
+    def request(self, method: str, url: str, data: bytes | None = None, binary: bool = False, limit: int = MAX_ASSET_BYTES, upload: bool = False) -> Any:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or parsed.netloc not in {"api.github.com", "uploads.github.com"}:
             raise PublishError("Refusing to send credentials outside GitHub API hosts")
@@ -255,15 +269,15 @@ class GitHub:
             return None
         return json.loads(payload)
 
-    def latest(self):
+    def latest(self) -> dict[str, Any] | None:
         try:
-            return self.request("GET", self.base + "/releases/latest")
+            return cast(dict[str, Any] | None, self.request("GET", self.base + "/releases/latest"))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 return None
             raise
 
-    def list_all_releases(self):
+    def list_all_releases(self) -> list[dict[str, Any]]:
         releases = []
         page = 1
         while True:
@@ -275,32 +289,32 @@ class GitHub:
                 return releases
             page += 1
 
-    def delete_release(self, release_id):
+    def delete_release(self, release_id: int) -> bool:
         self.request("DELETE", self.base + f"/releases/{int(release_id)}")
         return True
 
 
-    def create_draft(self, tag, commit, title, body):
+    def create_draft(self, tag: str, commit: str, title: str, body: str) -> Any:
         return self.request("POST", self.base + "/releases", json_bytes({
             "tag_name": tag, "target_commitish": commit, "name": title, "body": body,
             "draft": True, "prerelease": False, "make_latest": "false",
         }))
 
-    def upload(self, release_id, path):
+    def upload(self, release_id: int, path: Path) -> Any:
         if path.stat().st_size > MAX_ASSET_BYTES:
             raise PublishError("Release asset exceeds size limit")
         url = f"https://uploads.github.com/repos/{self.repository}/releases/{int(release_id)}/assets?"
         return self.request("POST", url + urllib.parse.urlencode({"name": path.name}), path.read_bytes(), upload=True)
 
-    def download(self, asset, limit=MAX_ASSET_BYTES):
-        return self.request("GET", self.base + f"/releases/assets/{int(asset['id'])}", binary=True, limit=limit)
+    def download(self, asset: dict[str, Any], limit: int = MAX_ASSET_BYTES) -> bytes:
+        return cast(bytes, self.request("GET", self.base + f"/releases/assets/{int(asset['id'])}", binary=True, limit=limit))
 
-    def publish(self, release_id):
+    def publish(self, release_id: int) -> Any:
         return self.request("PATCH", self.base + f"/releases/{int(release_id)}",
                             json_bytes({"draft": False, "prerelease": False, "make_latest": "true"}))
 
 
-def human_size(value):
+def human_size(value: int) -> str:
     if value < 1024:
         return f"{value} Б"
     if value < 1024 * 1024:
@@ -308,7 +322,7 @@ def human_size(value):
     return f"{value / 1024 / 1024:.2f} МБ"
 
 
-def make_release_body(manifest, metadata, repository):
+def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], repository: str) -> str:
     owner, project = repository.split("/", 1)
     output = manifest["output"]
     core = manifest["core"]["output"]
@@ -382,7 +396,7 @@ def make_release_body(manifest, metadata, repository):
 """
 
 
-def publish(assets, manifest, metadata, github, tag):
+def publish(assets: Path, manifest: dict[str, Any], metadata: dict[str, Any], github: Any, tag: str) -> dict[str, Any]:
     if {p.name for p in assets.iterdir()} != RELEASE_FILES:
         raise PublishError("Unexpected release inventory")
     latest = github.latest()
@@ -426,7 +440,7 @@ def publish(assets, manifest, metadata, github, tag):
         try:
             github.delete_release(release["id"])
         except Exception as cleanup_error:
-            print(f"Warning: draft rollback failed for release {release['id']}: {cleanup_error}", file=sys.stderr)
+            logger.warning("Draft rollback failed for release %s: %s", release["id"], cleanup_error)
         raise
     published = github.publish(release["id"])
     if published["draft"] or published["prerelease"]:
@@ -434,12 +448,18 @@ def publish(assets, manifest, metadata, github, tag):
     return {"status": "published", "release_url": published["html_url"], "tag": published["tag_name"]}
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default="incoming/dist")
     parser.add_argument("--output", default="release")
     parser.add_argument("--root", default=".", help="Checkout root used to verify the artifact recipe")
+    parser.add_argument("--dry-run", action="store_true", help="Validate a candidate locally without contacting GitHub")
+    parser.add_argument("--keep-releases", type=int, default=0, metavar="N", help="After publishing, keep Latest and N newest older releases")
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+    configure_logging(args.debug)
+    if args.keep_releases < 0:
+        raise PublishError("--keep-releases must be >= 0")
     if os.environ.get("GITHUB_REF") != "refs/heads/main" or os.environ.get("GITHUB_EVENT_NAME") not in {"push", "schedule", "workflow_dispatch"}:
         raise PublishError("Publication is restricted to trusted main-branch workflows")
     repository = os.environ["GITHUB_REPOSITORY"]
@@ -449,21 +469,30 @@ def main():
     if not run_id.isdigit() or not attempt.isdigit():
         raise PublishError("Invalid workflow run identity")
     candidate, assets = Path(args.input), Path(args.output)
-    github = GitHub(repository, os.environ["GITHUB_TOKEN"])
-    allow_initial = initial_baseline_allowed(github.latest(),
+    github = GitHub(repository, os.environ.get("GITHUB_TOKEN", ""))
+    latest = None if args.dry_run else github.latest()
+    allow_initial = initial_baseline_allowed(latest,
         os.environ.get("RESET_BASELINE", "false").lower() == "true", os.environ["GITHUB_EVENT_NAME"])
-    manifest = verify_candidate(candidate, Path(args.root).resolve(), commit, allow_initial_baseline=allow_initial)
+    manifest = verify_candidate(candidate, Path(args.root).resolve(), commit,
+                                allow_initial_baseline=allow_initial, allow_offline=args.dry_run)
+    if args.dry_run:
+        logger.info(json.dumps({"status": "dry-run", "validated": True, "domains": manifest["output"]["total_conditions"]}))
+        return
     if manifest["validation"]["baseline"] == "first-build":
-        print("Initial baseline accepted: first release or explicitly requested manual reset.", flush=True)
+        logger.info("Initial baseline accepted: first release or explicitly requested manual reset.")
 
-    # Retention/cleanup of old releases is intentionally NOT part of the publish path:
-    # published releases are kept as immutable baselines (see docs/BUILD.md).
-    # A separate, explicitly invoked retention command may be added later with
-    # --dry-run by default and protection for the Latest release.
-
-    metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt)
-    result = publish(assets, manifest, metadata, github, f"rules-{run_id}-{attempt}")
-    print(json.dumps(result), flush=True)
+    metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt,
+                              previous_release_tag=latest.get("tag_name") if latest else None)
+    tag = f"v{manifest['built_at'][:10].replace('-', '.')}-{run_id}-{attempt}"
+    result = publish(assets, manifest, metadata, github, tag)
+    if args.keep_releases and result["status"] == "published":
+        current = github.latest()
+        if current is None:
+            raise PublishError("Published latest release cannot be found for retention")
+        for old in releases_to_prune(github.list_all_releases(), current["id"], args.keep_releases):
+            github.delete_release(old["id"])
+            logger.info("Deleted old release %s", old["tag_name"])
+    logger.info(json.dumps(result))
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
             stream.write(f"Release **{result['status']}**: [{result['tag']}]({result['release_url']})\n\n")
@@ -471,13 +500,14 @@ def main():
             stream.write(f"Service IP SRS SHA-256: `{metadata['service_srs_sha256']}`\n")
 
 
-def releases_to_prune(releases, latest_id, keep):
+def releases_to_prune(releases: list[dict[str, Any]], latest_id: int | None, keep: int) -> list[dict[str, Any]]:
     candidates = [r for r in releases if not r.get("draft") and r["id"] != latest_id]
     candidates.sort(key=lambda r: r.get("published_at") or "", reverse=True)
     return candidates[keep:]
 
 
-def retention_main():
+def retention_main() -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(description="Delete old GitHub releases, keeping the newest N and always protecting Latest. Dry-run unless --apply is passed.")
     parser.add_argument("--keep", type=int, default=5, help="How many newest published releases to keep (default: 5)")
     parser.add_argument("--apply", action="store_true", help="Actually delete releases; without it only prints what would be deleted")
@@ -492,11 +522,11 @@ def retention_main():
     to_delete = releases_to_prune(github.list_all_releases(), latest["id"] if latest else None, args.keep)
     for release in to_delete:
         action = "deleting" if args.apply else "would delete"
-        print(f"{action}: {release['tag_name']} (id={release['id']}, published_at={release.get('published_at')})", flush=True)
+        logger.info(f"{action}: {release['tag_name']} (id={release['id']}, published_at={release.get('published_at')})")
         if args.apply:
             github.delete_release(release["id"])
-    print(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0,
-                      "would_delete": len(to_delete)}), flush=True)
+    logger.info(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0,
+                      "would_delete": len(to_delete)}))
 
 
 if __name__ == "__main__":
@@ -507,5 +537,5 @@ if __name__ == "__main__":
         else:
             main()
     except (PublishError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
-        print(f"PUBLICATION FAILED: {exc}", file=sys.stderr)
+        logger.error("PUBLICATION FAILED: %s", exc)
         raise SystemExit(1)

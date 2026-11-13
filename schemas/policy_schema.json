@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Routing policy",
+  "type": "object",
+  "required": ["schema_version", "shared_roots", "service_owned_suffixes", "validation"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "description": {"type": "string"},
+    "shared_roots": {"type": "object", "additionalProperties": {"type": "string"}},
+    "service_owned_suffixes": {"type": "object", "additionalProperties": {"type": "string"}},
+    "validation": {
+      "type": "object",
+      "required": ["max_invalid_fraction", "minimum_output_domains", "max_source_drop_fraction", "max_source_growth_fraction", "max_output_drop_fraction", "max_output_growth_fraction", "max_previous_age_days", "maximum_registry_ips", "max_service_stale_hours", "registry_ip"],
+      "properties": {
+        "max_invalid_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_output_domains": {"type": "integer", "minimum": 1},
+        "max_source_drop_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "max_source_growth_fraction": {"type": "number", "minimum": 0},
+        "max_output_drop_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "max_output_growth_fraction": {"type": "number", "minimum": 0},
+        "max_previous_age_days": {"type": "integer", "minimum": 1},
+        "maximum_registry_ips": {"type": "integer", "minimum": 1},
+        "max_service_stale_hours": {"type": "integer", "minimum": 1},
+        "registry_ip": {
+          "type": "object",
+          "required": ["max_drop_fraction", "max_growth_fraction"],
+          "properties": {
+            "max_drop_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+            "max_growth_fraction": {"type": "number", "minimum": 0}
+          }
+        }
+      }
+    }
+  }
+}
