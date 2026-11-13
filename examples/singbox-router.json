@@ -1,0 +1,93 @@
+{
+  "log": { "level": "warn" },
+  "experimental": {
+    "cache_file": { "enabled": true }
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "dns-vpn",
+        "server": "8.8.8.8",
+        "detour": "vpn"
+      },
+      {
+        "type": "https",
+        "tag": "dns-direct",
+        "server": "1.1.1.1",
+        "detour": "direct"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": ["routing"],
+        "server": "dns-vpn"
+      },
+      {
+        "rule_set": ["routing-direct-exceptions"],
+        "server": "dns-direct"
+      }
+    ],
+    "final": "dns-direct",
+    "strategy": "prefer_ipv4"
+  },
+  "outbounds": [
+    { "type": "direct", "tag": "direct" },
+    {
+      "type": "selector",
+      "tag": "vpn",
+      "outbounds": ["direct"]
+    }
+  ],
+  "route": {
+    "default_domain_resolver": "dns-direct",
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "routing-direct-exceptions",
+        "format": "binary",
+        "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-direct-exceptions.srs",
+        "http_client": { "detour": "direct" },
+        "update_interval": "6h"
+      },
+      {
+        "type": "remote",
+        "tag": "routing",
+        "format": "binary",
+        "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs",
+        "http_client": { "detour": "direct" },
+        "update_interval": "6h"
+      },
+      {
+        "type": "remote",
+        "tag": "routing-services",
+        "format": "binary",
+        "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs",
+        "http_client": { "detour": "direct" },
+        "update_interval": "6h"
+      },
+      {
+        "type": "remote",
+        "tag": "routing-registry-ip",
+        "format": "binary",
+        "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs",
+        "http_client": { "detour": "direct" },
+        "update_interval": "6h"
+      }
+    ],
+    "rules": [
+      { "action": "sniff" },
+      {
+        "rule_set": ["routing-direct-exceptions"],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": ["routing", "routing-services", "routing-registry-ip"],
+        "action": "route",
+        "outbound": "vpn"
+      }
+    ],
+    "final": "direct"
+  }
+}
