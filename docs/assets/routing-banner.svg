@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
   <title id="title">Routing — выборочная маршрутизация</title>
-  <desc id="desc">Заблокированные ресурсы через VPN, остальные — напрямую. Семнадцать источников и шесть наборов правил.</desc>
+  <desc id="desc">Заблокированные ресурсы через VPN, остальные — напрямую. Тринадцать источников и шесть наборов правил.</desc>
   <defs>
     <style>
       .overline{font:600 12px system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:2.6px;fill:#7890ad}
@@ -20,7 +20,7 @@
     <path d="M13 42h20M13 51h14M13 60h20" fill="none" stroke="#68dbc0" stroke-width="3" stroke-linecap="round"/>
     <text x="66" y="71" class="brand">ROUTING</text>
     <text x="0" y="113" class="subtitle">Выборочная маршрутизация</text>
-    <text x="0" y="177" class="stats">17 источников  ·  6 наборов  ·  обновление 4 раза в сутки</text>
+    <text x="0" y="177" class="stats">13 источников  ·  6 наборов  ·  обновление 4 раза в сутки</text>
   </g>
   <g transform="translate(700 68)">
     <rect width="200" height="104" rx="14" fill="#102c29" stroke="#28574e"/>

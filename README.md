@@ -223,7 +223,7 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 
 ### Источники доменов
 
-Проект объединяет **17 источников** для максимального покрытия:
+Проект объединяет **13 источников** для покрытия заблокированных и недоступных в России ресурсов:
 
 **Основные блок-листы:**
 - [Antifilter](https://antifilter.download/list/domains.lst) и [Antifilter community](https://community.antifilter.download/list/domains.lst) — полный список заблокированных в РФ;
@@ -232,18 +232,13 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 - [hoaxisr/vernette — RKN](https://github.com/hoaxisr/rulesets) — реестр Роскомнадзора;
 - [unavailable-in-russia](https://github.com/hoaxisr/rulesets) — геоограниченные сервисы.
 
-**Агрегаторы и сообщества:**
+**Агрегатор и специализированные сервисы:**
 - [amatol/awgmanager-lists](https://github.com/amatol/awgmanager-lists) — кураторский агрегат OONI, itdog geoblock и Services, RockBlack;
-- [Ground-Zerro/Geo-Aggregator](https://github.com/Ground-Zerro/Geo-Aggregator) — агрегатор 1762 категорий с ежедневным обновлением:
-  - `itDog-russia-inside` — недоступные ресурсы;
-  - `category-social-media` — социальные сети;
-  - `category-media` — медиа и стриминг;
-- [v2fly/domain-list-community — GreatFire](https://github.com/v2fly/domain-list-community) — мониторинг цензуры;
-- [RockBlack-VPN — Telegram](https://github.com/RockBlack-VPN/ip-address) — домены мессенджера.
-
-**Специализированные сервисы:**
 - [itdog — отдельный Google AI](https://github.com/itdoginfo/allow-domains/blob/main/Services/google_ai.lst);
+- [RockBlack-VPN — Telegram](https://github.com/RockBlack-VPN/ip-address) — домены мессенджера;
 - зависимости [Bungie, Kinopub, Gemini и TikTok](https://github.com/hoaxisr/rulesets).
+
+Общие категории вроде «все соцсети» или «все СМИ» намеренно не используются: они включают доступные в России ресурсы. Например, `vk.com`, `ok.ru`, `ria.ru`, `rt.com` и `cnn.com` должны идти напрямую; это закреплено обязательными probes. SRS-зеркала уже подключённых источников и дубликаты агрегаторов не добавляются, поскольку не дают нового покрытия.
 
 Отдельные IP-источники: [ipresolve.lst](https://antifilter.download/list/ipresolve.lst), [subnet.lst](https://antifilter.download/list/subnet.lst), [community.lst](https://community.antifilter.download/list/community.lst) и [ipsum.lst](https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst).
 
