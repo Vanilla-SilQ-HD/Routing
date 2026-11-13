@@ -569,17 +569,15 @@ def compile_and_verify(directory: Path, executable: Path, source_format_version:
             "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False}
 
 
-def build(args: Any) -> None:
-    started = time.monotonic()
-    root = Path(args.root).resolve()
+def load_configs(root: Path) -> dict[str, Any]:
+    """Load and cross-check every input configuration, returning one bundle."""
     sources_config = read_json(root / "config/sources.json")
     service_config = read_json(root / "config/service-networks.json")
     registry_config = read_json(root / "config/registry-ip-sources.json")
     policy = read_json(root / "config/policy.json")
-    previous = read_json(args.previous) if args.previous else None
+    popularity_config = read_json(root / "config/popularity.json")
     sources = sources_config["sources"]
     psl_source = sources_config["public_suffix_list"]
-    popularity_config = read_json(root / "config/popularity.json")
     popularity_source = popularity_config["source"]
     domain_inputs = [*sources, psl_source, popularity_source]
     registry_inputs = registry_config["sources"]
@@ -587,14 +585,20 @@ def build(args: Any) -> None:
     all_sources = domain_inputs + registry_inputs + service_inputs
     if len({s["id"] for s in all_sources}) != len(all_sources):
         raise BuildError("Duplicate input source ID")
-    cache = root / "cache/sources"
-    if not args.offline:
-        logger.info("Cache maintenance: %s", prune_cache(cache, max_age_days=getattr(args, "cache_max_age_days", 30), max_bytes=getattr(args, "cache_max_bytes", 1024 ** 3)))
-    network = policy.get("network", DEFAULT_NETWORK)
-    max_workers = getattr(args, "max_workers", None) or int(network.get("max_workers", 3))
-    fetched, service_errors = {}, {}
+    return {"sources_config": sources_config, "service_config": service_config,
+            "registry_config": registry_config, "policy": policy,
+            "popularity_config": popularity_config, "sources": sources,
+            "psl_source": psl_source, "popularity_source": popularity_source,
+            "domain_inputs": domain_inputs, "all_sources": all_sources}
+
+
+def fetch_inputs(all_sources: list[dict[str, Any]], domain_inputs: list[dict[str, Any]], cache: Path,
+                 offline: bool, network: dict[str, Any], max_workers: int) -> tuple[dict[str, Any], dict[str, str]]:
+    """Download every input source in parallel; collect per-service fetch errors."""
+    fetched: dict[str, Any] = {}
+    service_errors: dict[str, str] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {s["id"]: pool.submit(fetch_source, s, cache, args.offline, network) for s in all_sources}
+        futures = {s["id"]: pool.submit(fetch_source, s, cache, offline, network) for s in all_sources}
         for key, future in futures.items():
             try:
                 fetched[key] = future.result()
@@ -602,6 +606,30 @@ def build(args: Any) -> None:
                 if key in {s["id"] for s in domain_inputs}:
                     raise
                 service_errors[key] = str(exc)
+    return fetched, service_errors
+
+
+def build(args: Any) -> None:
+    started = time.monotonic()
+    root = Path(args.root).resolve()
+    configs = load_configs(root)
+    sources_config = configs["sources_config"]
+    service_config = configs["service_config"]
+    registry_config = configs["registry_config"]
+    policy = configs["policy"]
+    popularity_config = configs["popularity_config"]
+    sources = configs["sources"]
+    psl_source = configs["psl_source"]
+    popularity_source = configs["popularity_source"]
+    domain_inputs = configs["domain_inputs"]
+    all_sources = configs["all_sources"]
+    previous = read_json(args.previous) if args.previous else None
+    cache = root / "cache/sources"
+    if not args.offline:
+        logger.info("Cache maintenance: %s", prune_cache(cache, max_age_days=getattr(args, "cache_max_age_days", 30), max_bytes=getattr(args, "cache_max_bytes", 1024 ** 3)))
+    network = policy.get("network", DEFAULT_NETWORK)
+    max_workers = getattr(args, "max_workers", None) or int(network.get("max_workers", 3))
+    fetched, service_errors = fetch_inputs(all_sources, domain_inputs, cache, args.offline, network, max_workers)
     if args.fetch_only:
         if service_errors:
             raise BuildError(f"Cannot cache every service input: {service_errors}")

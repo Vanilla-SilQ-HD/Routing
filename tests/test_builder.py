@@ -400,5 +400,34 @@ class SmartProfileTests(unittest.TestCase):
                 build._extract_archive(archive, {"id": "x", "archive": "zip", "member": "nope.csv"}, target)
 
 
+class PipelineStageTests(unittest.TestCase):
+    def test_load_configs_rejects_duplicate_source_ids(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "config").mkdir()
+            duplicate = {"id": "same", "url": "https://example.com/x", "min_entries": 1, "max_bytes": 10}
+            build.write_json(root / "config/sources.json", {"sources": [duplicate], "public_suffix_list": dict(duplicate, id="same")})
+            build.write_json(root / "config/popularity.json", {"source": dict(duplicate, id="other")})
+            build.write_json(root / "config/service-networks.json", {"sources": []})
+            build.write_json(root / "config/registry-ip-sources.json", {"sources": []})
+            build.write_json(root / "config/policy.json", {})
+            with self.assertRaisesRegex(build.BuildError, "Duplicate input source ID"):
+                build.load_configs(root)
+
+    def test_fetch_inputs_collects_service_errors_but_domain_errors_raise(self):
+        domain = {"id": "domains", "url": "https://example.com/d"}
+        service = {"id": "service", "url": "https://example.com/s"}
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            with patch("build.fetch_source", side_effect=build.BuildError("boom")):
+                # A domain input failure is fatal.
+                with self.assertRaises(build.BuildError):
+                    build.fetch_inputs([domain], [domain], cache, True, {}, 1)
+                # A service-only failure is collected, not raised.
+                fetched, errors = build.fetch_inputs([service], [], cache, True, {}, 1)
+            self.assertEqual(fetched, {})
+            self.assertEqual(errors, {"service": "boom"})
+
+
 if __name__ == "__main__":
     unittest.main()
