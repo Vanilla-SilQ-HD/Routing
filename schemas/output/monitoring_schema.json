@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Routing monitoring report",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "provider", "vpn_measurement", "automatic_route_changes", "history"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "generated_at": {"type": ["string", "null"]},
+    "provider": {"type": "string"},
+    "vpn_measurement": {"const": "not_performed"},
+    "automatic_route_changes": {"const": false},
+    "history_restored": {"type": "boolean"},
+    "unavailable": {"type": "boolean"},
+    "stale_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["domain", "consecutive_works_direct"],
+        "properties": {
+          "domain": {"type": "string"},
+          "consecutive_works_direct": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["generated_at", "results"],
+        "properties": {
+          "generated_at": {"type": "string"},
+          "rotated_sample": {"type": "array", "items": {"type": "string"}},
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["target", "status"],
+              "properties": {
+                "target": {"type": "string"},
+                "status": {"enum": ["works_direct", "blocked_or_geo", "down_or_error", "unknown"]},
+                "http_status": {"type": ["integer", "null"]},
+                "expected": {"type": "string"},
+                "error": {"type": ["string", "null"]}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

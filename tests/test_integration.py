@@ -111,6 +111,8 @@ class IntegrationTests(unittest.TestCase):
         for name in publish_release.DATASETS:
             self.assertTrue((output / f"{name}.srs").is_file())
         self.assertEqual(validate_awg_outputs.validate_outputs(output), {"catalog_datasets": 7, "presets": 4})
+        import validate_outputs
+        self.assertEqual(validate_outputs.validate_outputs(output, ROOT / "schemas" / "output"), [])
         verified = publish_release.verify_candidate(output, self.root, COMMIT, allow_initial_baseline=True, allow_offline=True)
         self.assertEqual(verified["environment"]["github_commit"], COMMIT)
 

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "AWG Manager catalog",
+  "type": "object",
+  "required": ["generated", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "generated": {"type": "string"},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "url", "names"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"const": "routing"},
+          "url": {"type": "string", "pattern": "^https://.*\\{\\}"},
+          "names": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

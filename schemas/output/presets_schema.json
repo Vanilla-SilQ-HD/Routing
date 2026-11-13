@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "AWG Manager user presets",
+  "type": "object",
+  "required": ["presets"],
+  "additionalProperties": false,
+  "properties": {
+    "presets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "engines"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "iconSlug": {"type": "string"},
+          "category": {"type": "string"},
+          "notice": {"type": "string"},
+          "engines": {
+            "type": "object",
+            "required": ["singbox"],
+            "properties": {
+              "singbox": {
+                "type": "object",
+                "required": ["ruleSets", "action"],
+                "properties": {
+                  "action": {"const": "tunnel"},
+                  "ruleSets": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": ["tag", "url"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "tag": {"type": "string"},
+                        "url": {"type": "string", "pattern": "^https://.*\\.srs$"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
