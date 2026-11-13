@@ -6,10 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-EXPECTED_DATASETS = {
-    "blocked-domains", "blocked-domains-core", "blocked-domains-smart", "blocked-services-ip",
-    "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions",
-}
+from routing.datasets import DATASET_NAMES
+
+EXPECTED_DATASETS = set(DATASET_NAMES)
 EXPECTED_PRESETS = {
     "routing-full": {"routing", "routing-services", "routing-registry-ip"},
     "routing-compact": {"routing-core", "routing-services", "routing-registry-ip"},

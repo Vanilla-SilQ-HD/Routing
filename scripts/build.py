@@ -1032,8 +1032,8 @@ def build(args: Any) -> None:
         built_at = utc_now()
         repository = os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")
         release_base = f"https://github.com/{repository}/releases/latest/download/"
-        catalog_names = ["blocked-domains", "blocked-domains-core", "blocked-domains-smart", "blocked-services-ip",
-                         "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions"]
+        from routing.datasets import DATASET_NAMES
+        catalog_names = list(DATASET_NAMES)
         write_json(stage / "catalog.json", {"generated": built_at, "sources": [
             {"id": "routing", "url": release_base + "{}", "names": catalog_names}
         ]})

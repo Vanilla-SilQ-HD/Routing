@@ -17,6 +17,9 @@ import zipfile
 from pathlib import Path
 from typing import Any, cast
 
+from routing.datasets import DATASET_NAMES, dataset_sizes
+from routing.datasets import DATASETS as DATASET_REGISTRY
+
 try:
     from .errors import RoutingError
     from .logging_utils import configure_logging
@@ -31,8 +34,7 @@ class PublishError(RoutingError):
     pass
 
 
-DATASETS = ("blocked-domains", "blocked-domains-core", "blocked-domains-smart", "blocked-services-ip",
-            "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions")
+DATASETS = DATASET_NAMES
 BUILD_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".json", ".txt")}
 BUILD_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
                 "manual-rules.json", "report.html", "status.json", "updated.json", "catalog.json", "presets.user.json"}
@@ -381,20 +383,13 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
     registry_cidr = manifest["registry_cidr"]["output"]
     direct = manifest["direct_exceptions"]["output"]
     changes = manifest["domain_diff"]
-    labels = {
-        "blocked-domains": ("Домены · Full", "Маршрутизация и DNS", output["srs_bytes"]),
-        "blocked-domains-core": ("Домены · Compact", "Компактная база для слабых устройств", core["srs_bytes"]),
-        "blocked-domains-smart": ("Домены · Smart", "Compact + популярные домены из Full", smart["srs_bytes"]),
-        "blocked-services-ip": ("Сети приложений", "Проверенные сети Telegram", service["srs_bytes"]),
-        "blocked-registry-ip": ("Точные IP", "Подключения напрямую к IP", registry["srs_bytes"]),
-        "blocked-registry-ip-cidr": ("Широкие CIDR", "Необязательное дополнение с предупреждением", registry_cidr["srs_bytes"]),
-        "routing-direct-exceptions": ("Direct-исключения", "Приоритетные правила Direct", direct["srs_bytes"]),
-    }
+    sizes = dataset_sizes(manifest)
     rows = []
     base = f"https://github.com/{repository}/releases/latest/download/"
-    for name, (title, purpose, size) in labels.items():
-        digest = metadata["dataset_srs_sha256"][name]
-        rows.append(f"| [{title}]({base}{name}.srs) | {purpose} | {human_size(size)} | `{digest[:12]}…` |")
+    for dataset in DATASET_REGISTRY:
+        digest = metadata["dataset_srs_sha256"][dataset.name]
+        rows.append(f"| [{dataset.title}]({base}{dataset.name}.srs) | {dataset.description} | "
+                    f"{human_size(sizes[dataset.name])} | `{digest[:12]}…` |")
     pages = f"https://{owner.lower()}.github.io/{project}/"
     return f"""Выборочная маршрутизация: недоступные ресурсы через VPN, остальное напрямую.
 

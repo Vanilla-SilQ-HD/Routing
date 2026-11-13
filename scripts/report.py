@@ -4,15 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-DATASETS = (
-    ("blocked-domains", "Домены · Full", "Полная база для маршрутизации и DNS"),
-    ("blocked-domains-core", "Домены · Compact", "Компактная база для слабых устройств"),
-    ("blocked-domains-smart", "Домены · Smart", "Compact + популярные домены из Full (Tranco)"),
-    ("blocked-services-ip", "Сети приложений", "Проверенные сети Telegram"),
-    ("blocked-registry-ip", "Точные IP", "Только /32 и /128 из блок-листов"),
-    ("blocked-registry-ip-cidr", "Широкие CIDR", "Необязательное дополнение с предупреждением"),
-    ("routing-direct-exceptions", "Direct-исключения", "Приоритетные правила Direct"),
-)
+from routing.datasets import DATASETS, dataset_sizes
 
 
 def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], probes: list[dict[str, Any]]) -> str:
@@ -24,15 +16,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
     registry = manifest["registry_ip"]
     direct = manifest["direct_exceptions"]
     changes = manifest["domain_diff"]
-    dataset_sizes = {
-        "blocked-domains": output["srs_bytes"],
-        "blocked-domains-core": manifest["core"]["output"]["srs_bytes"],
-        "blocked-domains-smart": manifest["smart"]["output"]["srs_bytes"],
-        "blocked-services-ip": services["output"]["srs_bytes"],
-        "blocked-registry-ip": registry["output"]["srs_bytes"],
-        "blocked-registry-ip-cidr": manifest["registry_cidr"]["output"]["srs_bytes"],
-        "routing-direct-exceptions": direct["output"]["srs_bytes"],
-    }
+    sizes = dataset_sizes(manifest)
     data = {
         "meta": {
             "repository": repository,
@@ -61,15 +45,15 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
         },
         "downloads": [
             {
-                "name": name,
-                "title": title,
-                "description": description,
-                "url": release_base + name + ".srs",
-                "shaUrl": release_base + name + ".srs.sha256",
-                "sha256": output["files"][name + ".srs"],
-                "bytes": dataset_sizes[name],
+                "name": dataset.name,
+                "title": dataset.title,
+                "description": dataset.description,
+                "url": release_base + dataset.name + ".srs",
+                "shaUrl": release_base + dataset.name + ".srs.sha256",
+                "sha256": output["files"][dataset.name + ".srs"],
+                "bytes": sizes[dataset.name],
             }
-            for name, title, description in DATASETS
+            for dataset in DATASETS
         ],
         "sources": [
             {
