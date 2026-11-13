@@ -334,6 +334,8 @@ jobs:
           name: selective-vpn-rules
           path: incoming
       - name: Run limited availability checks
+        env:
+          GLOBALPING_TOKEN: ${{ secrets.GLOBALPING_TOKEN }}
         run: python scripts/monitor.py --output incoming/dist/monitoring.json --html incoming/dist/monitoring.html
       - name: Save monitoring report for Pages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

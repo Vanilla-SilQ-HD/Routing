@@ -188,5 +188,41 @@ class MonitorTests(unittest.TestCase):
             self.assertEqual(load_compact_domains("https://example/core.txt"), [])
 
 
+    def test_probe_network_and_asn_are_captured(self):
+        results = [{"statusCode": 200, "probe": {"asn": 12345, "network": "ExampleISP"}},
+                   {"statusCode": 200, "probe": {"asn": 67890, "network": "OtherNet"}}]
+        result = summarize_results("example.com", results)
+        self.assertEqual(result["status"], "works_direct")
+        self.assertEqual(result["asns"], [12345, 67890])
+        self.assertEqual(result["networks"], ["ExampleISP", "OtherNet"])
+        self.assertEqual(result["observations"][0]["asn"], 12345)
+        self.assertEqual(result["observations"][0]["network"], "ExampleISP")
+
+    def test_globalping_token_is_sent_when_present(self):
+        from monitor import request_json
+
+        captured = {}
+
+        class FakeResponse:
+            def read(self, _limit):
+                return b"{}"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                captured["headers"] = dict(request.header_items())
+                return FakeResponse()
+
+        with patch("urllib.request.build_opener", return_value=FakeOpener()), \
+                patch.dict("os.environ", {"GLOBALPING_TOKEN": "secret-token"}):
+            request_json("https://api.example/measurements")
+        self.assertEqual(captured["headers"].get("Authorization"), "Bearer secret-token")
+
+
 if __name__ == "__main__":
     unittest.main()
