@@ -45,6 +45,14 @@
     "framercanvas.com": "Зависимости Framer, перечислены itdog inside; принадлежность Framer указана в PSL",
     "notion.site": "Домены сервиса Notion, перечислены itdog inside; принадлежность Notion указана в PSL"
   },
+  "network": {
+    "timeout_seconds": 30,
+    "total_timeout_seconds": 150,
+    "retries": 3,
+    "backoff_base": 1.0,
+    "backoff_max": 30.0,
+    "max_workers": 3
+  },
   "validation": {
     "max_invalid_fraction": 0.01,
     "minimum_output_domains": 500000,

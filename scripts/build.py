@@ -10,6 +10,7 @@ import ipaddress
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import sys
@@ -74,7 +75,31 @@ class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = False) -> tuple[Path, dict[str, Any]]:
+DEFAULT_NETWORK = {"timeout_seconds": 30, "total_timeout_seconds": 150,
+                   "retries": 3, "backoff_base": 1.0, "backoff_max": 30.0, "max_workers": 3}
+
+
+def _cached_metadata(target: Path, metadata_path: Path, source: dict[str, Any]) -> dict[str, Any] | None:
+    """Return verified cached metadata for a conditional GET, or None if unusable."""
+    if not target.exists() or not metadata_path.exists():
+        return None
+    try:
+        metadata = read_json(metadata_path)
+    except (OSError, ValueError):
+        return None
+    if metadata.get("url") != source["url"] or file_sha256(target) != metadata.get("sha256"):
+        return None
+    return cast(dict[str, Any], metadata)
+
+
+def _retry_delay(attempt: int, network: dict[str, Any]) -> float:
+    base = float(network["backoff_base"]) * (2 ** attempt)
+    capped: float = min(float(network["backoff_max"]), base)
+    return capped * (0.5 + random.random() / 2)
+
+
+def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = False, network: dict[str, Any] | None = None) -> tuple[Path, dict[str, Any]]:
+    net = {**DEFAULT_NETWORK, **(network or {})}
     cache = Path(cache)
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / (source["id"] + ".data")
@@ -89,19 +114,28 @@ def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = Fals
     if urllib.parse.urlsplit(source["url"]).scheme != "https":
         raise BuildError("All input URLs must use HTTPS")
     opener = urllib.request.build_opener(HTTPSRedirect())
-    error = None
-    for attempt in range(3):
+    cached = _cached_metadata(target, metadata_path, source)
+    retries = int(net["retries"])
+    error: Exception | None = None
+    for attempt in range(retries):
         temporary = target.with_suffix(".partial")
         try:
             started = time.monotonic()
-            request = urllib.request.Request(source["url"], headers={"User-Agent": USER_AGENT})
-            with opener.open(request, timeout=30) as response, temporary.open("wb") as stream:
+            headers = {"User-Agent": USER_AGENT}
+            if cached:
+                # Conditional GET: avoid re-downloading an unchanged source.
+                if cached.get("etag"):
+                    headers["If-None-Match"] = cached["etag"]
+                if cached.get("last_modified"):
+                    headers["If-Modified-Since"] = cached["last_modified"]
+            request = urllib.request.Request(source["url"], headers=headers)
+            with opener.open(request, timeout=float(net["timeout_seconds"])) as response, temporary.open("wb") as stream:
                 digest, size = hashlib.sha256(), 0
                 while chunk := response.read(1024 * 1024):
                     size += len(chunk)
                     if size > source["max_bytes"]:
                         raise BuildError(f"Source exceeds size limit: {source['id']}")
-                    if time.monotonic() - started > 150:
+                    if time.monotonic() - started > float(net["total_timeout_seconds"]):
                         raise BuildError(f"Source download exceeded time limit: {source['id']}")
                     digest.update(chunk)
                     stream.write(chunk)
@@ -111,17 +145,33 @@ def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = Fals
                     "id": source["id"], "url": source["url"], "effective_url": response.url,
                     "fetched_at": utc_now(), "bytes": size, "sha256": digest.hexdigest(),
                     "last_modified": response.headers.get("Last-Modified"),
-                    "etag": response.headers.get("ETag"),
+                    "etag": response.headers.get("ETag"), "not_modified": False,
                 }
             os.replace(temporary, target)
             write_json(metadata_path, metadata)
-            logger.info(f"Fetched {source['id']}: {size:,} bytes")
+            logger.info("Fetched %s: %s bytes", source["id"], f"{size:,}")
             return target, metadata
+        except urllib.error.HTTPError as exc:
+            temporary.unlink(missing_ok=True)
+            if exc.code == 304 and cached is not None:
+                # Not modified: reuse the verified cache without touching the network again.
+                cached = dict(cached, not_modified=True)
+                write_json(metadata_path, cached)
+                logger.info("Source %s not modified (304); using cache", source["id"])
+                return target, cached
+            error = exc
+            if attempt < retries - 1:
+                retry_after = exc.headers.get("Retry-After") if exc.code in {429, 503} else None
+                try:
+                    delay = float(retry_after) if retry_after else _retry_delay(attempt, net)
+                except ValueError:
+                    delay = _retry_delay(attempt, net)
+                time.sleep(delay)
         except (OSError, urllib.error.URLError, BuildError) as exc:
             error = exc
             temporary.unlink(missing_ok=True)
-            if attempt < 2:
-                time.sleep(attempt + 1)
+            if attempt < retries - 1:
+                time.sleep(_retry_delay(attempt, net))
     raise BuildError(f"Cannot fetch required source {source['id']}: {error}")
 
 
@@ -559,9 +609,11 @@ def build(args: Any) -> None:
     cache = root / "cache/sources"
     if not args.offline:
         logger.info("Cache maintenance: %s", prune_cache(cache, max_age_days=getattr(args, "cache_max_age_days", 30), max_bytes=getattr(args, "cache_max_bytes", 1024 ** 3)))
+    network = policy.get("network", DEFAULT_NETWORK)
+    max_workers = getattr(args, "max_workers", None) or int(network.get("max_workers", 3))
     fetched, service_errors = {}, {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=getattr(args, "max_workers", 3)) as pool:
-        futures = {s["id"]: pool.submit(fetch_source, s, cache, args.offline) for s in all_sources}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {s["id"]: pool.submit(fetch_source, s, cache, args.offline, network) for s in all_sources}
         for key, future in futures.items():
             try:
                 fetched[key] = future.result()
@@ -927,7 +979,7 @@ def main() -> None:
     parser.add_argument("--previous-rules", help="Previous blocked-domains.json for the semantic diff")
     parser.add_argument("--output", help="A new, empty output directory")
     parser.add_argument("--sing-box", help="Path to the pinned sing-box compiler")
-    parser.add_argument("--max-workers", type=int, default=3, choices=range(1, 17), metavar="1..16")
+    parser.add_argument("--max-workers", type=int, default=None, choices=range(1, 17), metavar="1..16")
     parser.add_argument("--cache-max-age-days", type=int, default=30)
     parser.add_argument("--cache-max-bytes", type=int, default=1024 ** 3)
     parser.add_argument("--debug", action="store_true")

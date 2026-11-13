@@ -1,0 +1,85 @@
+name: Report build failures
+
+# Opens (or updates) a single pinned issue when a scheduled/manual build fails,
+# and closes it automatically once a build succeeds again. No third-party actions.
+
+on:
+  workflow_run:
+    workflows: ["Build selective VPN rule sets"]
+    types: [completed]
+
+permissions:
+  issues: write
+
+jobs:
+  report:
+    # Only track trusted main-branch runs; ignore pull_request runs.
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Open, update or close the build-failure issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          conclusion = os.environ["CONCLUSION"]
+          run_url = os.environ["RUN_URL"]
+          run_id = os.environ["RUN_ID"]
+          title = "Сборка не проходит"
+          marker = "<!-- routing-build-failure -->"
+          headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "Routing-Build-Status/1",
+          }
+
+          def call(method, url, data=None):
+              request = urllib.request.Request(
+                  url, data=json.dumps(data).encode() if data is not None else None,
+                  headers=headers, method=method)
+              with urllib.request.build_opener().open(request, timeout=30) as response:
+                  payload = response.read()
+              return json.loads(payload) if payload else None
+
+          base = f"https://api.github.com/repos/{repo}"
+          query = urllib.parse.urlencode({"state": "open", "labels": "build-failure", "per_page": 100})
+          open_issues = call("GET", base + "/issues?" + query)
+          existing = next((i for i in open_issues if i["title"] == title and marker in (i.get("body") or "")), None)
+
+          if conclusion == "success":
+              if existing is not None:
+                  call("PATCH", base + f"/issues/{existing['number']}", {"state": "closed"})
+                  call("POST", base + f"/issues/{existing['number']}/comments",
+                       {"body": f"Сборка восстановлена: {run_url}"})
+                  print(f"Closed issue #{existing['number']} after a successful build.")
+              else:
+                  print("Build succeeded; no open failure issue to close.")
+              raise SystemExit(0)
+
+          body = (f"{marker}\nПоследний запуск завершился со статусом **{conclusion}**.\n\n"
+                  f"- Прогон: {run_url}\n"
+                  f"- Run ID: `{run_id}`\n\n"
+                  f"Этот issue обновляется автоматически и закроется после успешной сборки.")
+          if existing is None:
+              call("POST", base + "/issues",
+                   {"title": title, "body": body, "labels": ["build-failure"]})
+              print("Opened a new build-failure issue.")
+          else:
+              call("PATCH", base + f"/issues/{existing['number']}", {"body": body})
+              print(f"Updated existing issue #{existing['number']}.")
+          PY

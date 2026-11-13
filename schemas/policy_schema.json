@@ -8,6 +8,19 @@
     "description": {"type": "string"},
     "shared_roots": {"type": "object", "additionalProperties": {"type": "string"}},
     "service_owned_suffixes": {"type": "object", "additionalProperties": {"type": "string"}},
+    "network": {
+      "type": "object",
+      "required": ["timeout_seconds", "total_timeout_seconds", "retries", "backoff_base", "backoff_max", "max_workers"],
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "total_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "retries": {"type": "integer", "minimum": 1, "maximum": 10},
+        "backoff_base": {"type": "number", "minimum": 0},
+        "backoff_max": {"type": "number", "exclusiveMinimum": 0},
+        "max_workers": {"type": "integer", "minimum": 1, "maximum": 16}
+      }
+    },
     "validation": {
       "type": "object",
       "required": ["max_invalid_fraction", "minimum_output_domains", "max_source_drop_fraction", "max_source_growth_fraction", "max_output_drop_fraction", "max_output_growth_fraction", "max_previous_age_days", "maximum_registry_ips", "max_service_stale_hours", "registry_ip"],

@@ -100,6 +100,14 @@ jobs:
         run: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Restore source cache for conditional downloads
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: cache/sources
+          key: sources-${{ hashFiles('config/*.json') }}-${{ github.run_id }}
+          restore-keys: |
+            sources-${{ hashFiles('config/*.json') }}-
+            sources-
       - name: Install pinned official sing-box compiler
         run: python scripts/install_tools.py
       - name: Test routing semantics and failure guards
@@ -187,6 +195,51 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/publish_release.py retention --keep 5 --apply
+
+  publish-data:
+    name: Mirror rules and baseline to the data branch
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Download the validated build from this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: selective-vpn-rules
+          path: incoming
+      - name: Publish manifest, diffs and SRS into the orphan data branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git init data-branch
+          cd data-branch
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git checkout --orphan data
+          cp ../incoming/dist/manifest.json .
+          cp ../incoming/dist/domain-changes.json .
+          cp ../incoming/dist/catalog.json .
+          cp ../incoming/dist/presets.user.json .
+          for name in blocked-domains blocked-domains-core blocked-services-ip \
+                      blocked-registry-ip blocked-registry-ip-cidr routing-direct-exceptions; do
+            cp "../incoming/dist/${name}.json" .
+            cp "../incoming/dist/${name}.srs" .
+          done
+          printf '# Routing data branch\n\nMachine-generated mirror of the latest published rule sets.\nDo not edit by hand; the build workflow overwrites this branch content.\n\njsDelivr mirror example:\nhttps://cdn.jsdelivr.net/gh/%s@data/blocked-domains.srs\n' "${GITHUB_REPOSITORY}" > README.md
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+          else
+            git commit -m "Rules from run ${GITHUB_RUN_ID}"
+            git push --force origin data
+          fi
 
   monitor:
     name: Measure external availability

@@ -124,6 +124,58 @@ class InputFailureTests(unittest.TestCase):
             with patch("urllib.request.build_opener", side_effect=AssertionError("network not permitted")), self.assertRaises(build.BuildError):
                 build.fetch_source({"id": "fixture", "url": "https://example.com/data"}, path, offline=True)
 
+    def _write_cache(self, path, body=b"line\n", etag='"v1"', last_modified="Mon, 01 Jan 2026 00:00:00 GMT"):
+        import hashlib
+        (path / "fixture.data").write_bytes(body)
+        build.write_json(path / "fixture.metadata.json", {
+            "id": "fixture", "url": "https://example.com/data", "sha256": hashlib.sha256(body).hexdigest(),
+            "etag": etag, "last_modified": last_modified})
+
+    def test_conditional_get_reuses_verified_cache_on_304(self):
+        import urllib.error
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            self._write_cache(path)
+            source = {"id": "fixture", "url": "https://example.com/data", "max_bytes": 1000}
+            not_modified = urllib.error.HTTPError(source["url"], 304, "Not Modified", {}, None)
+            captured = {}
+
+            class FakeOpener:
+                def open(self, request, timeout):
+                    captured["headers"] = dict(request.header_items())
+                    raise not_modified
+
+            with patch("urllib.request.build_opener", return_value=FakeOpener()):
+                target, metadata = build.fetch_source(source, path)
+            self.assertTrue(metadata["not_modified"])
+            self.assertEqual(target.read_bytes(), b"line\n")
+            # Conditional headers were sent from the cached metadata.
+            self.assertEqual(captured["headers"].get("If-none-match"), '"v1"')
+            self.assertIn("If-modified-since", captured["headers"])
+
+    def test_retry_delay_is_exponential_and_capped(self):
+        net = {"backoff_base": 1.0, "backoff_max": 8.0}
+        with patch("random.random", return_value=1.0):  # jitter factor -> 1.0
+            self.assertEqual(build._retry_delay(0, net), 1.0)
+            self.assertEqual(build._retry_delay(1, net), 2.0)
+            self.assertEqual(build._retry_delay(2, net), 4.0)
+            self.assertEqual(build._retry_delay(5, net), 8.0)  # capped
+
+    def test_retry_after_is_honoured_on_429(self):
+        import urllib.error
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            source = {"id": "fixture", "url": "https://example.com/data", "max_bytes": 1000}
+            headers = {"Retry-After": "7"}
+            error = urllib.error.HTTPError(source["url"], 429, "Too Many", headers, None)
+            sleeps = []
+            with patch("urllib.request.build_opener") as opener, \
+                    patch("time.sleep", side_effect=sleeps.append), \
+                    self.assertRaises(build.BuildError):
+                opener.return_value.open.side_effect = error
+                build.fetch_source(source, path, network={"retries": 2})
+            self.assertEqual(sleeps, [7.0])
+
 
 class ManualAndDiffTests(unittest.TestCase):
     def test_manual_rules_require_reason_review_and_narrow_suffix(self):
