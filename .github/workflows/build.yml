@@ -201,6 +201,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+      id-token: write
+      attestations: write
     env:
       PYTHONUTF8: '1'
     outputs:
@@ -223,6 +225,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           RESET_BASELINE: ${{ inputs.reset_baseline || false }}
         run: python scripts/publish_release.py --input incoming/dist --output release
+      - name: Attest build provenance for the rule sets
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            release/*.srs
+            release/SHA256SUMS
       - id: baseline
         name: Expose whether this run produced a stable (Latest) release
         run: |
