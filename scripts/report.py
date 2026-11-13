@@ -100,6 +100,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'">
 <title>Routing Dashboard</title>
 <style>
 :root{--bg:#08111f;--panel:#101c2e;--panel2:#15243a;--line:#293c56;--text:#e7f0fc;--muted:#93a9c4;--vpn:#45d7a5;--direct:#70b7ff;--danger:#ff8b98;--shadow:0 12px 36px #02071055}
@@ -166,6 +167,7 @@ const $=id=>document.getElementById(id);
 const fmt=n=>Number(n).toLocaleString('ru-RU');
 const bytes=n=>n<1024?n+' Б':n<1048576?(n/1024).toFixed(1)+' КБ':(n/1048576).toFixed(2)+' МБ';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeUrl=u=>{const s=String(u??'');return s.startsWith('https://')?esc(s):'#'};
 const badge=v=>`<span class="badge ${v==='VPN'?'vpn':v==='Direct'?'direct':'neutral'}">${esc(v||'—')}</span>`;
 const empty=(text,colspan=1)=>`<tr><td colspan="${colspan}" class="empty">${esc(text)}</td></tr>`;
 $('built').textContent='Сборка: '+new Date(D.meta.builtAt).toLocaleString('ru-RU',{timeZone:'UTC'})+' UTC';
@@ -173,10 +175,10 @@ $('commit').textContent=D.meta.commit?'Commit: '+D.meta.commit:'Локальна
 $('release').href=D.meta.releaseUrl;$('actions').href=D.meta.runUrl;$('repository').href='https://github.com/'+D.meta.repository;
 const cards=[['Доменных условий',fmt(S.domains),fmt(S.exact)+' exact · '+fmt(S.suffix)+' suffix'],['Compact-доменов',fmt(S.coreDomains),'компактный профиль'],['Smart-доменов',fmt(S.smartDomains),'Compact + популярные из Full'],['Источников',fmt(S.sources),'автообновление 4 раза в сутки'],['Сети приложений',fmt(S.servicePrefixes),'проверенные сети Telegram'],['Точные IP',fmt(S.registryPrefixes),'отдельный registry-набор'],['Широкие CIDR',fmt(S.registryCidrPrefixes),'необязательное дополнение'],['Direct-исключения',fmt(S.directRules),'приоритет над VPN'],['Размер доменного SRS',bytes(S.srsBytes),'двоичный rule-set']];
 $('cards').innerHTML=cards.map(([l,v,h])=>`<div class="card"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${h}</div></div>`).join('');
-$('downloads').innerHTML=D.downloads.map(x=>`<article class="download"><h3>${esc(x.title)}</h3><p>${esc(x.description)} · ${bytes(x.bytes)}</p><div class="links"><a href="${x.url}">Скачать SRS</a><a href="${x.shaUrl}">SHA-256</a></div><div class="hash">${esc(x.sha256)}</div></article>`).join('');
+$('downloads').innerHTML=D.downloads.map(x=>`<article class="download"><h3>${esc(x.title)}</h3><p>${esc(x.description)} · ${bytes(x.bytes)}</p><div class="links"><a href="${safeUrl(x.url)}">Скачать SRS</a><a href="${safeUrl(x.shaUrl)}">SHA-256</a></div><div class="hash">${esc(x.sha256)}</div></article>`).join('');
 function probes(){const q=$('probe-search').value.toLowerCase(),f=$('probe-filter').value;const rows=D.probes.filter(p=>(!f||p.final_decision===f)&&(!q||[p.domain,p.matched_rule,(p.sources||[]).join(' ')].join(' ').toLowerCase().includes(q)));$('probe-count').textContent=`Показано ${fmt(rows.length)} из ${fmt(D.probes.length)}`;$('probe-rows').innerHTML=rows.length?rows.map(p=>`<tr><td class="domain">${esc(p.domain)}</td><td>${badge(p.base_decision)}</td><td>${badge(p.final_decision)}</td><td>${badge(p.expected)}</td><td class="domain">${esc(p.matched_rule||'—')}</td><td>${esc((p.sources||[]).join(', ')||'—')}</td></tr>`).join(''):empty('Ничего не найдено',6)}
 $('probe-search').addEventListener('input',probes);$('probe-filter').addEventListener('change',probes);probes();
-$('source-rows').innerHTML=D.sources.map(s=>`<tr><td class="domain"><a href="${s.url}">${esc(s.id)}</a></td><td>${fmt(s.conditions)}</td><td>${fmt(s.ips)}</td><td>${fmt(s.invalid)}</td><td>${fmt(s.filtered)}</td><td class="sha">${esc(s.sha256)}</td></tr>`).join('');
+$('source-rows').innerHTML=D.sources.map(s=>`<tr><td class="domain"><a href="${safeUrl(s.url)}">${esc(s.id)}</a></td><td>${fmt(s.conditions)}</td><td>${fmt(s.ips)}</td><td>${fmt(s.invalid)}</td><td>${fmt(s.filtered)}</td><td class="sha">${esc(s.sha256)}</td></tr>`).join('');
 function exclusions(){const q=$('exclusion-search').value.toLowerCase();const rows=D.exclusions.filter(x=>!q||[x.domain,x.reason,(x.sources||[]).join(' ')].join(' ').toLowerCase().includes(q));$('exclusion-count').textContent=`Показано ${fmt(rows.length)} из ${fmt(D.exclusions.length)}`;$('exclusion-rows').innerHTML=rows.length?rows.map(x=>`<tr><td class="domain">${esc(x.domain)}</td><td><code>${esc(x.kind)}</code></td><td>${esc(x.reason)}</td><td>${esc((x.sources||[]).join(', '))}</td></tr>`).join(''):empty('Ничего не найдено',4)}
 $('exclusion-search').addEventListener('input',exclusions);exclusions();
 const C=D.changes;
@@ -185,7 +187,7 @@ function listRows(items,input,output,emptyText){const q=$(input).value.toLowerCa
 function changeLists(){const groups=C.by_kind||{},added=Object.values(groups).flatMap(x=>x.added_sample||[]),removed=Object.values(groups).flatMap(x=>x.removed_sample||[]);listRows(added,'added-search','added-rows','Добавлений нет');listRows(removed,'removed-search','removed-rows','Удалений нет');$('lost-rows').innerHTML=(C.effective_removed_sample||[]).length?C.effective_removed_sample.map(x=>`<tr><td class="domain danger">${esc(x)}</td></tr>`).join(''):empty('Потерянного покрытия нет')}
 $('added-search').addEventListener('input',changeLists);$('removed-search').addEventListener('input',changeLists);changeLists();
 $('service-baseline').textContent='Baseline: '+D.services.baseline+'. Общие облачные сети не включаются.';
-$('service-rows').innerHTML=D.services.sources.map(s=>`<tr><td>${esc(s.service)}</td><td>${fmt(s.ipv4)}</td><td>${fmt(s.ipv6)}</td><td class="domain"><a href="${s.url}">${esc(s.url)}</a></td></tr>`).join('');
+$('service-rows').innerHTML=D.services.sources.map(s=>`<tr><td>${esc(s.service)}</td><td>${fmt(s.ipv4)}</td><td>${fmt(s.ipv6)}</td><td class="domain"><a href="${safeUrl(s.url)}">${esc(s.url)}</a></td></tr>`).join('');
 function paginatedNetwork(key,items,emptyText){
   const state={page:0},pageSize=250;
   const render=()=>{

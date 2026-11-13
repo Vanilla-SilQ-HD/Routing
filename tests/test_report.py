@@ -61,6 +61,14 @@ class ReportTests(unittest.TestCase):
         self.assertIn("paginatedNetwork('registry'", report)
         self.assertIn("registry-search", report)
         self.assertNotIn("D.registry.prefixes.map", report)
+        self.assertIn("Content-Security-Policy", report)
+        self.assertIn("default-src 'none'", report)
+        self.assertIn("safeUrl", report)
+        # URLs must go through the https-only escaper, never raw interpolation.
+        self.assertIn('safeUrl(x.url)', report)
+        self.assertIn('safeUrl(s.url)', report)
+        self.assertNotIn('href="${s.url}"', report)
+        self.assertNotIn('href="${x.url}"', report)
 
 
 if __name__ == "__main__":

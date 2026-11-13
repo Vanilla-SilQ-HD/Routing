@@ -24,9 +24,14 @@ def main() -> None:
     configure_logging()
     lock = json.loads((ROOT / "config/tools-lock.json").read_text(encoding="utf-8"))
     system = platform.system().lower()
-    if platform.machine().lower() not in {"amd64", "x86_64"}:
-        raise SystemExit("Only the audited amd64 compiler archives are configured.")
-    asset = lock["assets"][f"{system}-amd64"]
+    machine = platform.machine().lower()
+    if machine in {"amd64", "x86_64"}:
+        arch = "amd64"
+    elif machine in {"arm64", "aarch64"}:
+        arch = "arm64"
+    else:
+        raise SystemExit(f"Unsupported machine architecture: {machine}")
+    asset = lock["assets"][f"{system}-{arch}"]
     if urllib.parse.urlsplit(asset["url"]).scheme != "https":
         raise SystemExit("Compiler URL must use HTTPS")
     request = urllib.request.Request(asset["url"], headers={"User-Agent": "selective-vpn-rules/1"})
