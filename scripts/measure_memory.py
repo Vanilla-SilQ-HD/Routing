@@ -33,7 +33,10 @@ def rss_bytes(process: Any) -> int:
 
         counters = ProcessMemoryCounters()
         counters.cb = ctypes.sizeof(counters)
-        if not getattr(ctypes, "windll").psapi.GetProcessMemoryInfo(
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            raise OSError("Windows windll is unavailable")
+        if not windll.psapi.GetProcessMemoryInfo(
                 ctypes.c_void_p(process._handle), ctypes.byref(counters), counters.cb):
             raise OSError("GetProcessMemoryInfo failed")
         return int(counters.WorkingSetSize)
