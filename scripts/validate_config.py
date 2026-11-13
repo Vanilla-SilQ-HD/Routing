@@ -20,6 +20,7 @@ SCHEMAS = {
     "probes.json": "probes_schema.json",
     "monitoring.json": "monitoring_schema.json",
     "tools-lock.json": "tools_lock_schema.json",
+    "popularity.json": "popularity_schema.json",
 }
 
 

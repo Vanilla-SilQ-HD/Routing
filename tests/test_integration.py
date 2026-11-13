@@ -83,6 +83,10 @@ class IntegrationTests(unittest.TestCase):
                                               "provider": {"name": "fixture", "url": "https://example.com", "country": "RU",
                                                            "probes_per_target": 1, "timeout_seconds": 1},
                                               "targets": ["blocked.example"]})
+        popularity = {"id": "tranco", "url": "https://example.com/top-1m.csv.zip", "archive": "zip",
+                      "member": "top-1m.csv", "format": "tranco-csv", "max_bytes": 1000000,
+                      "max_uncompressed_bytes": 1000000, "min_entries": 1, "description": "fixture popularity"}
+        self.write_config("popularity.json", {"schema_version": 1, "max_domains": 100, "source": popularity})
         lock = json.loads((ROOT / "config/tools-lock.json").read_text(encoding="utf-8"))
         self.write_config("tools-lock.json", lock)
         domains = ["blocked.example"] + [f"domain{i}.example" for i in range(1000)]
@@ -90,6 +94,7 @@ class IntegrationTests(unittest.TestCase):
         self.cache_source(psl, "com\norg\n")
         self.cache_source(service, "1.0.0.0/24\n2606:4700::/32\n")
         self.cache_source(registry, "1.1.1.2/32\n8.8.8.0/24\n")
+        self.cache_source(popularity, "1,blocked.example\n2,popular.example\n")
 
     @unittest.skipUnless(COMPILER.is_file(), "pinned sing-box compiler is not installed")
     def test_offline_build_and_release_dry_run(self):
@@ -105,7 +110,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(manifest["output"]["total_conditions"], 1000)
         for name in publish_release.DATASETS:
             self.assertTrue((output / f"{name}.srs").is_file())
-        self.assertEqual(validate_awg_outputs.validate_outputs(output), {"catalog_datasets": 6, "presets": 3})
+        self.assertEqual(validate_awg_outputs.validate_outputs(output), {"catalog_datasets": 7, "presets": 4})
         verified = publish_release.verify_candidate(output, self.root, COMMIT, allow_initial_baseline=True, allow_offline=True)
         self.assertEqual(verified["environment"]["github_commit"], COMMIT)
 

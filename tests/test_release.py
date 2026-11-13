@@ -135,6 +135,12 @@ class ReleaseTests(unittest.TestCase):
                            "srs_bytes": (self.candidate / "blocked-domains-core.srs").stat().st_size},
                 "compiler": dict(compiler),
             },
+            "smart": {
+                "output": {"total_conditions": 2, "exact": 1, "suffix": 1,
+                           "popularity_source": "tranco-top-1m", "popular_domains": 1000,
+                           "srs_bytes": (self.candidate / "blocked-domains-smart.srs").stat().st_size},
+                "compiler": dict(compiler),
+            },
             "registry_cidr": {
                 "sources": [{"id": "registry", "url": "https://example.com/cidr.txt"}],
                 "validation": {"baseline": "first-registry-build", "warnings": []},

@@ -14,7 +14,8 @@ class ReportTests(unittest.TestCase):
             "environment": {"github_commit": "a" * 40, "repository": "owner/Routing"},
             "output": {"total_conditions": 2, "exact": 1, "suffix": 1, "srs_bytes": 100,
                        "files": {name: "0" * 64 for name in (
-                           "blocked-domains.srs", "blocked-domains-core.srs", "blocked-services-ip.srs",
+                           "blocked-domains.srs", "blocked-domains-core.srs", "blocked-domains-smart.srs",
+                           "blocked-services-ip.srs",
                            "blocked-registry-ip.srs", "blocked-registry-ip-cidr.srs",
                            "routing-direct-exceptions.srs")}},
             "sources": [{"id": "source", "url": "https://example.com/source", "unique_conditions": 2,
@@ -27,6 +28,8 @@ class ReportTests(unittest.TestCase):
             },
             "core": {"output": {"total_conditions": 1, "srs_bytes": 40},
                      "compiler": compiler},
+            "smart": {"output": {"total_conditions": 1, "srs_bytes": 41},
+                      "compiler": compiler},
             "registry_cidr": {"validation": {"baseline": "previous-registry-build"},
                               "output": {"total_prefixes": 1, "srs_bytes": 30, "prefixes": ["198.51.100.0/24"]},
                               "compiler": compiler},

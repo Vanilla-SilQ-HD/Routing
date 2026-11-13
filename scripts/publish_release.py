@@ -31,7 +31,7 @@ class PublishError(RoutingError):
     pass
 
 
-DATASETS = ("blocked-domains", "blocked-domains-core", "blocked-services-ip",
+DATASETS = ("blocked-domains", "blocked-domains-core", "blocked-domains-smart", "blocked-services-ip",
             "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions")
 BUILD_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".json", ".txt")}
 BUILD_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
@@ -192,6 +192,12 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
             or core["output"].get("srs_bytes") != (directory / "blocked-domains-core.srs").stat().st_size):
         raise PublishError("Unexpected compact domain output")
     verify_compiler(core.get("compiler"), lock)
+    smart = manifest.get("smart")
+    if (not isinstance(smart, dict) or type(smart.get("output", {}).get("total_conditions")) is not int
+            or smart["output"]["total_conditions"] < core["output"]["total_conditions"]
+            or smart["output"].get("srs_bytes") != (directory / "blocked-domains-smart.srs").stat().st_size):
+        raise PublishError("Unexpected smart domain output")
+    verify_compiler(smart.get("compiler"), lock)
     direct = manifest.get("direct_exceptions")
     if (not isinstance(direct, dict) or type(direct.get("output", {}).get("total_conditions")) is not int
             or direct["output"]["total_conditions"] < 0
@@ -369,6 +375,7 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
     owner, project = repository.split("/", 1)
     output = manifest["output"]
     core = manifest["core"]["output"]
+    smart = manifest["smart"]["output"]
     service = manifest["service_networks"]["output"]
     registry = manifest["registry_ip"]["output"]
     registry_cidr = manifest["registry_cidr"]["output"]
@@ -377,6 +384,7 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
     labels = {
         "blocked-domains": ("Домены · Full", "Маршрутизация и DNS", output["srs_bytes"]),
         "blocked-domains-core": ("Домены · Compact", "Компактная база для слабых устройств", core["srs_bytes"]),
+        "blocked-domains-smart": ("Домены · Smart", "Compact + популярные домены из Full", smart["srs_bytes"]),
         "blocked-services-ip": ("Сети приложений", "Проверенные сети Telegram", service["srs_bytes"]),
         "blocked-registry-ip": ("Точные IP", "Подключения напрямую к IP", registry["srs_bytes"]),
         "blocked-registry-ip-cidr": ("Широкие CIDR", "Необязательное дополнение с предупреждением", registry_cidr["srs_bytes"]),
@@ -396,6 +404,7 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
 | --- | ---: |
 | Доменных условий · Full | **{output['total_conditions']:,}** |
 | Доменных условий · Compact | **{core['total_conditions']:,}** |
+| Доменных условий · Smart | **{smart['total_conditions']:,}** |
 | Точные имена / suffix | {output['exact']:,} / {output['suffix']:,} |
 | Сети Telegram | **{service['total_prefixes']}** |
 | Registry IP | **{registry['total_prefixes']}** |

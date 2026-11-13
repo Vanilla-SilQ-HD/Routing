@@ -19,6 +19,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -98,6 +99,38 @@ def _retry_delay(attempt: int, network: dict[str, Any]) -> float:
     return capped * (0.5 + random.random() / 2)
 
 
+def _extract_archive(archive_path: Path, source: dict[str, Any], target: Path) -> tuple[int, str]:
+    """Extract a single member from a downloaded zip archive into target (.data).
+
+    Returns the uncompressed size and SHA-256 of the extracted text. Extraction is
+    bounded so a malicious archive cannot exhaust disk or memory."""
+    if source.get("archive") != "zip":
+        raise BuildError(f"Unsupported archive type: {source.get('archive')}")
+    member = source.get("member")
+    if not member:
+        raise BuildError(f"Archive source {source['id']} must declare a member")
+    max_uncompressed = int(source.get("max_uncompressed_bytes", 64 * 1024 * 1024))
+    with zipfile.ZipFile(archive_path) as archive:
+        names = archive.namelist()
+        if member not in names:
+            raise BuildError(f"Archive member {member!r} not found in {source['id']}")
+        info = archive.getinfo(member)
+        if info.file_size > max_uncompressed:
+            raise BuildError(f"Archive member exceeds size limit: {source['id']}")
+        digest = hashlib.sha256()
+        size = 0
+        with archive.open(info) as src, target.open("wb") as dst:
+            while chunk := src.read(1024 * 1024):
+                size += len(chunk)
+                if size > max_uncompressed:
+                    raise BuildError(f"Archive member exceeds size limit: {source['id']}")
+                digest.update(chunk)
+                dst.write(chunk)
+    if not size:
+        raise BuildError(f"Empty archive member: {source['id']}")
+    return size, digest.hexdigest()
+
+
 def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = False, network: dict[str, Any] | None = None) -> tuple[Path, dict[str, Any]]:
     net = {**DEFAULT_NETWORK, **(network or {})}
     cache = Path(cache)
@@ -147,7 +180,17 @@ def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = Fals
                     "last_modified": response.headers.get("Last-Modified"),
                     "etag": response.headers.get("ETag"), "not_modified": False,
                 }
-            os.replace(temporary, target)
+            if source.get("archive"):
+                # The .data file always holds the extracted text; the raw archive is kept
+                # separately so offline replay and the cache hash stay consistent.
+                archive_target = cache / (source["id"] + ".archive")
+                os.replace(temporary, archive_target)
+                uncompressed, text_sha256 = _extract_archive(archive_target, source, target)
+                metadata["archive_sha256"] = metadata["sha256"]
+                metadata["sha256"] = text_sha256
+                metadata["uncompressed_bytes"] = uncompressed
+            else:
+                os.replace(temporary, target)
             write_json(metadata_path, metadata)
             logger.info("Fetched %s: %s bytes", source["id"], f"{size:,}")
             return target, metadata
@@ -199,6 +242,32 @@ def normalize_domain(value: Any) -> str:
     if len(value) > 253 or any(not ASCII_LABEL.fullmatch(label) for label in value.split(".")):
         raise ValueError("invalid DNS labels")
     return cast(str, value)
+
+
+def parse_popularity(path: str | Path, psl: PublicSuffixes, *, max_domains: int, min_entries: int) -> set[str]:
+    """Parse a Tranco CSV (rank,domain) into a set of popular registrable domains.
+
+    Only popularity is read here; this never produces VPN rules by itself."""
+    popular: set[str] = set()
+    with Path(path).open(encoding="utf-8-sig", errors="strict") as stream:
+        for line in stream:
+            line = line.strip()
+            if not line or "," not in line:
+                continue
+            _rank, _, domain = line.partition(",")
+            candidate = domain.strip()
+            if not candidate:
+                continue
+            try:
+                name = normalize_domain(candidate)
+            except ValueError:
+                continue
+            popular.add(psl.registrable_domain(name))
+            if len(popular) >= max_domains:
+                break
+    if len(popular) < min_entries:
+        raise BuildError(f"Popularity list is unexpectedly small: {len(popular)} < {min_entries}")
+    return popular
 
 
 def parse_source(path: str | Path, source: dict[str, Any], max_invalid_fraction: float, ip_networks: set[Any] | None = None) -> tuple[set[str], set[str], dict[str, Any]]:
@@ -325,6 +394,18 @@ class PublicSuffixes:
         if name.partition(".")[2] in self.private_wildcard and name not in self.exact:
             return False
         return self.is_public_suffix(name)
+
+    def registrable_domain(self, name: str) -> str:
+        """Return the registrable domain (public suffix plus one label) for a host.
+
+        Falls back to the name itself when no parent is a known public suffix, so
+        already-registrable input is returned unchanged."""
+        for parent in parents(name):
+            if self.is_public_suffix(parent):
+                index = name[: len(name) - len(parent) - 1]
+                # One label before the public suffix.
+                return index.split(".")[-1] + "." + parent
+        return name
 
 
 def parents(name: str) -> Iterator[str]:
@@ -613,7 +694,9 @@ def build(args: Any) -> None:
     previous = read_json(args.previous) if args.previous else None
     sources = sources_config["sources"]
     psl_source = sources_config["public_suffix_list"]
-    domain_inputs = [*sources, psl_source]
+    popularity_config = read_json(root / "config/popularity.json")
+    popularity_source = popularity_config["source"]
+    domain_inputs = [*sources, psl_source, popularity_source]
     registry_inputs = registry_config["sources"]
     service_inputs = service_config["sources"] + [s["identity_source"] for s in service_config["sources"] if "identity_source" in s]
     all_sources = domain_inputs + registry_inputs + service_inputs
@@ -720,6 +803,27 @@ def build(args: Any) -> None:
     core_exact, core_suffix = minimize(core_exact, core_suffix)
     if len(core_exact) + len(core_suffix) < 1000:
         raise BuildError("Compact domain set is unexpectedly small")
+    # Smart = Compact plus every popular registrable domain from the Full set.
+    # Popularity never introduces a rule on its own; it only promotes rules that are
+    # already routed to VPN in Full. Compact stays a strict subset of Smart.
+    popular = parse_popularity(fetched[popularity_source["id"]][0], psl,
+                               max_domains=popularity_config["max_domains"],
+                               min_entries=popularity_source["min_entries"])
+    smart_exact: dict[str, int] = dict(core_exact)
+    smart_suffix: dict[str, int] = dict(core_suffix)
+    for name, mask in original_exact.items():
+        if psl.registrable_domain(name) in popular:
+            smart_exact[name] = smart_exact.get(name, 0) | mask
+    for name, mask in original_suffix.items():
+        if psl.registrable_domain(name) in popular:
+            smart_suffix[name] = smart_suffix.get(name, 0) | mask
+    smart_exact, smart_suffix = minimize(smart_exact, smart_suffix)
+    # Guarantee: every condition routed to VPN by Compact is also covered by Smart.
+    for names in (core_exact, core_suffix):
+        if any(not match_rule(name, smart_exact, smart_suffix) for name in names):
+            raise BuildError("Smart set lost a Compact condition")
+    logger.info("Smart set: %s conditions (Compact %s, popular Full rules promoted)",
+                len(smart_exact) + len(smart_suffix), len(core_exact) + len(core_suffix))
     count = len(exact) + len(suffix)
     if count < policy["validation"]["minimum_output_domains"]:
         raise BuildError(f"Unexpectedly small final set: {count}")
@@ -775,6 +879,10 @@ def build(args: Any) -> None:
             raise BuildError(f"Unexpected probe expectation for {name}: {expected}")
         if expected is not None and final_decision != expected:
             raise BuildError(f"Probe regression for {name}: expected {expected}, got {final_decision}")
+        # Smart must never demote a VPN decision made by Compact to Direct.
+        if match_rule(name, core_exact, core_suffix) and not direct_match \
+                and not match_rule(name, smart_exact, smart_suffix):
+            raise BuildError(f"Smart probe regression for {name}: Compact routes to VPN but Smart does not")
         probes.append({"domain": name, "base_decision": "VPN" if match else "Direct",
                        "final_decision": final_decision, "expected": expected,
                        "matched_type": match[0] if match else None, "matched_rule": match[1] if match else None,
@@ -829,6 +937,18 @@ def build(args: Any) -> None:
             for name in sorted(core_suffix):
                 stream.write("domain:" + name + "\n")
         core_compilation = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-domains-core")
+        smart_rules = {}
+        if smart_exact:
+            smart_rules["domain"] = sorted(smart_exact)
+        if smart_suffix:
+            smart_rules["domain_suffix"] = sorted(smart_suffix)
+        write_json(stage / "blocked-domains-smart.json", {"version": lock["source_format_version"], "rules": [smart_rules]})
+        with (stage / "blocked-domains-smart.txt").open("w", encoding="utf-8", newline="\n") as stream:
+            for name in sorted(smart_exact):
+                stream.write("full:" + name + "\n")
+            for name in sorted(smart_suffix):
+                stream.write("domain:" + name + "\n")
+        smart_compilation = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-domains-smart")
         write_json(stage / "blocked-services-ip.json", {"version": lock["source_format_version"],
                                                        "rules": [{"ip_cidr": [str(n) for n in service_networks]}]})
         (stage / "blocked-services-ip.txt").write_text("".join(str(n) + "\n" for n in service_networks), encoding="utf-8")
@@ -904,10 +1024,15 @@ def build(args: Any) -> None:
                        "exact": len(core_exact), "suffix": len(core_suffix),
                        "source_ids": [s["id"] for s in sources if s["id"] not in core_excluded] + ["manual-vpn"],
                        "srs_bytes": (stage / "blocked-domains-core.srs").stat().st_size}
+        smart_output = {"total_conditions": len(smart_exact) + len(smart_suffix),
+                        "exact": len(smart_exact), "suffix": len(smart_suffix),
+                        "popularity_source": popularity_source["id"],
+                        "popular_domains": len(popular),
+                        "srs_bytes": (stage / "blocked-domains-smart.srs").stat().st_size}
         built_at = utc_now()
         repository = os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")
         release_base = f"https://github.com/{repository}/releases/latest/download/"
-        catalog_names = ["blocked-domains", "blocked-domains-core", "blocked-services-ip",
+        catalog_names = ["blocked-domains", "blocked-domains-core", "blocked-domains-smart", "blocked-services-ip",
                          "blocked-registry-ip", "blocked-registry-ip-cidr", "routing-direct-exceptions"]
         write_json(stage / "catalog.json", {"generated": built_at, "sources": [
             {"id": "routing", "url": release_base + "{}", "names": catalog_names}
@@ -923,6 +1048,7 @@ def build(args: Any) -> None:
             "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
             "service_networks": service_manifest,
             "core": {"output": core_output, "compiler": core_compilation},
+            "smart": {"output": smart_output, "compiler": smart_compilation},
             "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]]
                                        + [{key: value for key, value in source.items() if key not in {"prefixes", "raw_prefixes"}}
                                           for source in registry_source_stats],
@@ -972,6 +1098,7 @@ def make_presets(release_base: str) -> dict[str, Any]:
     rule_urls = {
         "routing": "blocked-domains.srs",
         "routing-core": "blocked-domains-core.srs",
+        "routing-smart": "blocked-domains-smart.srs",
         "routing-services": "blocked-services-ip.srs",
         "routing-registry-ip": "blocked-registry-ip.srs",
         "routing-registry-ip-cidr": "blocked-registry-ip-cidr.srs",
@@ -981,6 +1108,8 @@ def make_presets(release_base: str) -> dict[str, Any]:
          "Полная доменная база и точные IP. Direct-исключения настройте отдельным приоритетным правилом."),
         ("routing-compact", "Routing · Compact", ["routing-core", "routing-services", "routing-registry-ip"],
          "Компактная доменная база без двух крупнейших реестров, сервисные сети и точные IP. Direct-исключения настраиваются отдельно."),
+        ("routing-smart", "Routing · Smart", ["routing-smart", "routing-services", "routing-registry-ip"],
+         "Compact плюс популярные домены из полного набора (Tranco top-1M): баланс покрытия и размера. Direct-исключения настраиваются отдельно."),
         ("routing-wide-cidr", "Routing · Wide CIDR", ["routing-registry-ip-cidr"],
          "Дополнительные широкие CIDR. Подключайте только после проверки покрытия."),
     ]

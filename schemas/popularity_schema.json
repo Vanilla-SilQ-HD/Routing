@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft-2020-12/schema",
+  "title": "Domain popularity source",
+  "type": "object",
+  "required": ["schema_version", "source", "max_domains"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "description": {"type": "string"},
+    "max_domains": {"type": "integer", "minimum": 1},
+    "source": {
+      "type": "object",
+      "required": ["id", "url", "archive", "member", "format", "max_bytes", "max_uncompressed_bytes", "min_entries", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+        "url": {"type": "string", "pattern": "^https://"},
+        "archive": {"const": "zip"},
+        "member": {"type": "string", "minLength": 1},
+        "format": {"const": "tranco-csv"},
+        "max_bytes": {"type": "integer", "minimum": 1},
+        "max_uncompressed_bytes": {"type": "integer", "minimum": 1},
+        "min_entries": {"type": "integer", "minimum": 1},
+        "description": {"type": "string", "minLength": 1},
+        "reference": {"type": "string"}
+      }
+    }
+  }
+}

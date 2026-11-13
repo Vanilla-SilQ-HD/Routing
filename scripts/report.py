@@ -7,6 +7,7 @@ from typing import Any
 DATASETS = (
     ("blocked-domains", "Домены · Full", "Полная база для маршрутизации и DNS"),
     ("blocked-domains-core", "Домены · Compact", "Компактная база для слабых устройств"),
+    ("blocked-domains-smart", "Домены · Smart", "Compact + популярные домены из Full (Tranco)"),
     ("blocked-services-ip", "Сети приложений", "Проверенные сети Telegram"),
     ("blocked-registry-ip", "Точные IP", "Только /32 и /128 из блок-листов"),
     ("blocked-registry-ip-cidr", "Широкие CIDR", "Необязательное дополнение с предупреждением"),
@@ -26,6 +27,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
     dataset_sizes = {
         "blocked-domains": output["srs_bytes"],
         "blocked-domains-core": manifest["core"]["output"]["srs_bytes"],
+        "blocked-domains-smart": manifest["smart"]["output"]["srs_bytes"],
         "blocked-services-ip": services["output"]["srs_bytes"],
         "blocked-registry-ip": registry["output"]["srs_bytes"],
         "blocked-registry-ip-cidr": manifest["registry_cidr"]["output"]["srs_bytes"],
@@ -46,6 +48,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
             "suffix": output["suffix"],
             "srsBytes": output["srs_bytes"],
             "coreDomains": manifest["core"]["output"]["total_conditions"],
+            "smartDomains": manifest["smart"]["output"]["total_conditions"],
             "registryCidrPrefixes": manifest["registry_cidr"]["output"]["total_prefixes"],
             "sources": len(manifest["sources"]),
             "servicePrefixes": services["output"]["total_prefixes"],
@@ -184,7 +187,7 @@ const empty=(text,colspan=1)=>`<tr><td colspan="${colspan}" class="empty">${esc(
 $('built').textContent='Сборка: '+new Date(D.meta.builtAt).toLocaleString('ru-RU',{timeZone:'UTC'})+' UTC';
 $('commit').textContent=D.meta.commit?'Commit: '+D.meta.commit:'Локальная сборка';
 $('release').href=D.meta.releaseUrl;$('actions').href=D.meta.runUrl;$('repository').href='https://github.com/'+D.meta.repository;
-const cards=[['Доменных условий',fmt(S.domains),fmt(S.exact)+' exact · '+fmt(S.suffix)+' suffix'],['Compact-доменов',fmt(S.coreDomains),'компактный профиль'],['Источников',fmt(S.sources),'автообновление 4 раза в сутки'],['Сети приложений',fmt(S.servicePrefixes),'проверенные сети Telegram'],['Точные IP',fmt(S.registryPrefixes),'отдельный registry-набор'],['Широкие CIDR',fmt(S.registryCidrPrefixes),'необязательное дополнение'],['Direct-исключения',fmt(S.directRules),'приоритет над VPN'],['Размер доменного SRS',bytes(S.srsBytes),'двоичный rule-set']];
+const cards=[['Доменных условий',fmt(S.domains),fmt(S.exact)+' exact · '+fmt(S.suffix)+' suffix'],['Compact-доменов',fmt(S.coreDomains),'компактный профиль'],['Smart-доменов',fmt(S.smartDomains),'Compact + популярные из Full'],['Источников',fmt(S.sources),'автообновление 4 раза в сутки'],['Сети приложений',fmt(S.servicePrefixes),'проверенные сети Telegram'],['Точные IP',fmt(S.registryPrefixes),'отдельный registry-набор'],['Широкие CIDR',fmt(S.registryCidrPrefixes),'необязательное дополнение'],['Direct-исключения',fmt(S.directRules),'приоритет над VPN'],['Размер доменного SRS',bytes(S.srsBytes),'двоичный rule-set']];
 $('cards').innerHTML=cards.map(([l,v,h])=>`<div class="card"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${h}</div></div>`).join('');
 $('downloads').innerHTML=D.downloads.map(x=>`<article class="download"><h3>${esc(x.title)}</h3><p>${esc(x.description)} · ${bytes(x.bytes)}</p><div class="links"><a href="${x.url}">Скачать SRS</a><a href="${x.shaUrl}">SHA-256</a></div><div class="hash">${esc(x.sha256)}</div></article>`).join('');
 function probes(){const q=$('probe-search').value.toLowerCase(),f=$('probe-filter').value;const rows=D.probes.filter(p=>(!f||p.final_decision===f)&&(!q||[p.domain,p.matched_rule,(p.sources||[]).join(' ')].join(' ').toLowerCase().includes(q)));$('probe-count').textContent=`Показано ${fmt(rows.length)} из ${fmt(D.probes.length)}`;$('probe-rows').innerHTML=rows.length?rows.map(p=>`<tr><td class="domain">${esc(p.domain)}</td><td>${badge(p.base_decision)}</td><td>${badge(p.final_decision)}</td><td>${badge(p.expected)}</td><td class="domain">${esc(p.matched_rule||'—')}</td><td>${esc((p.sources||[]).join(', ')||'—')}</td></tr>`).join(''):empty('Ничего не найдено',6)}

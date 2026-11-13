@@ -277,7 +277,7 @@ jobs:
           cp ../incoming/dist/domain-changes.json .
           cp ../incoming/dist/catalog.json .
           cp ../incoming/dist/presets.user.json .
-          for name in blocked-domains blocked-domains-core blocked-services-ip \
+          for name in blocked-domains blocked-domains-core blocked-domains-smart blocked-services-ip \
                       blocked-registry-ip blocked-registry-ip-cidr routing-direct-exceptions; do
             cp "../incoming/dist/${name}.json" .
             cp "../incoming/dist/${name}.srs" .
@@ -364,6 +364,7 @@ jobs:
           cp incoming/dist/presets.user.json _site/presets.user.json
           cp incoming/dist/blocked-domains.srs _site/blocked-domains.srs
           cp incoming/dist/blocked-domains-core.srs _site/blocked-domains-core.srs
+          cp incoming/dist/blocked-domains-smart.srs _site/blocked-domains-smart.srs
           cp incoming/dist/blocked-services-ip.srs _site/blocked-services-ip.srs
           cp incoming/dist/blocked-registry-ip.srs _site/blocked-registry-ip.srs
           cp incoming/dist/blocked-registry-ip-cidr.srs _site/blocked-registry-ip-cidr.srs

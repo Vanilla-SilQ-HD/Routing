@@ -337,10 +337,11 @@ class AWGPresetTests(unittest.TestCase):
     def test_vpn_presets_never_route_direct_exceptions_to_vpn(self):
         presets = build.make_presets("https://example.com/")["presets"]
         self.assertEqual({item["id"] for item in presets},
-                         {"routing-full", "routing-compact", "routing-wide-cidr"})
+                         {"routing-full", "routing-compact", "routing-smart", "routing-wide-cidr"})
         by_id = {item["id"]: {r["tag"] for r in item["engines"]["singbox"]["ruleSets"]} for item in presets}
         self.assertEqual(by_id["routing-full"], {"routing", "routing-services", "routing-registry-ip"})
         self.assertEqual(by_id["routing-compact"], {"routing-core", "routing-services", "routing-registry-ip"})
+        self.assertEqual(by_id["routing-smart"], {"routing-smart", "routing-services", "routing-registry-ip"})
         self.assertEqual(by_id["routing-wide-cidr"], {"routing-registry-ip-cidr"})
         for preset in presets:
             engine = preset["engines"]["singbox"]
@@ -349,6 +350,54 @@ class AWGPresetTests(unittest.TestCase):
             for rule_set in engine["ruleSets"]:
                 self.assertTrue(rule_set["url"].startswith("https://example.com/"))
                 self.assertTrue(rule_set["url"].endswith(".srs"))
+
+
+class SmartProfileTests(unittest.TestCase):
+    def test_registrable_domain_uses_public_suffix(self):
+        psl = build.PublicSuffixes("com\nco.uk\n*.ck\n!www.ck\n")
+        self.assertEqual(psl.registrable_domain("example.com"), "example.com")
+        self.assertEqual(psl.registrable_domain("a.b.example.com"), "example.com")
+        self.assertEqual(psl.registrable_domain("x.example.co.uk"), "example.co.uk")
+        # Wildcard *.ck: b.ck is a public suffix, so a.b.ck is the registrable domain.
+        self.assertEqual(psl.registrable_domain("a.b.ck"), "a.b.ck")
+        # PSL exception: www.ck is registrable itself.
+        self.assertEqual(psl.registrable_domain("www.ck"), "www.ck")
+        # Unknown suffix falls back to the input unchanged.
+        self.assertEqual(psl.registrable_domain("host.internal"), "host.internal")
+
+    def test_parse_popularity_reads_registrable_domains(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "top.csv"
+            path.write_text("1,Example.COM\n2,a.b.example.co.uk\nnot-a-domain\n3,\n", encoding="utf-8")
+            psl = build.PublicSuffixes("com\nco.uk\n")
+            popular = build.parse_popularity(path, psl, max_domains=100, min_entries=1)
+            self.assertEqual(popular, {"example.com", "example.co.uk"})
+
+    def test_parse_popularity_rejects_tiny_list(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "top.csv"
+            path.write_text("1,example.com\n", encoding="utf-8")
+            with self.assertRaises(build.BuildError):
+                build.parse_popularity(path, build.PublicSuffixes("com\n"), max_domains=100, min_entries=500)
+
+    def test_zip_member_is_extracted_and_hashed(self):
+        import hashlib
+        import zipfile
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "src.zip"
+            target = Path(temporary) / "out.data"
+            payload = b"1,example.com\n2,example.org\n"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("top-1m.csv", payload)
+                zf.writestr("other.txt", b"ignore me")
+            source = {"id": "tranco", "archive": "zip", "member": "top-1m.csv"}
+            size, digest = build._extract_archive(archive, source, target)
+            self.assertEqual(target.read_bytes(), payload)
+            self.assertEqual(size, len(payload))
+            self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+            # Missing member is an explicit error.
+            with self.assertRaises(build.BuildError):
+                build._extract_archive(archive, {"id": "x", "archive": "zip", "member": "nope.csv"}, target)
 
 
 if __name__ == "__main__":

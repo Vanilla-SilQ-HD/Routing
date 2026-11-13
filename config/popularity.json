@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "description": "Источник популярности доменов для профиля Smart. Не является источником VPN-правил: используется только чтобы отобрать популярные регистрируемые домены из полного набора.",
+  "source": {
+    "id": "tranco-top-1m",
+    "url": "https://tranco-list.eu/top-1m.csv.zip",
+    "archive": "zip",
+    "member": "top-1m.csv",
+    "format": "tranco-csv",
+    "max_bytes": 33554432,
+    "max_uncompressed_bytes": 67108864,
+    "min_entries": 500000,
+    "description": "Tranco top-1M — ранжированный список популярных регистрируемых доменов",
+    "reference": "https://tranco-list.eu/"
+  },
+  "max_domains": 1000000
+}
