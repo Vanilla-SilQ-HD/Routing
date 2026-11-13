@@ -1,0 +1,99 @@
+name: Create a PR from an approved unrouted candidate
+
+# When a maintainer labels an unrouted issue 'approved', this workflow reads the
+# bot's candidate JSON from the issue comments and opens a pull request adding it
+# to the right config file. Merging stays manual.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  propose:
+    if: github.event.label.name == 'approved' && contains(github.event.issue.labels.*.name, 'unrouted')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Create a branch and a pull request with the candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          issue_number = os.environ["ISSUE_NUMBER"]
+          headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "Routing-Approved/1",
+          }
+
+          def call(method, url, data=None):
+              request = urllib.request.Request(
+                  url, data=json.dumps(data).encode() if data is not None else None,
+                  headers=headers, method=method)
+              with urllib.request.build_opener().open(request, timeout=30) as response:
+                  payload = response.read()
+              return json.loads(payload) if payload else None
+
+          base = f"https://api.github.com/repos/{repo}"
+          comments = call("GET", base + f"/issues/{issue_number}/comments?per_page=100")
+          candidate = None
+          for comment in comments:
+              body = comment.get("body", "")
+              if "<!-- routing-candidate -->" not in body:
+                  continue
+              match = re.search(r"```json\s*(\{.*?\})\s*```", body, re.DOTALL)
+              if match:
+                  candidate = json.loads(match.group(1))
+              target = "direct-exceptions" if "direct-exceptions" in body else "manual-vpn"
+          if candidate is None:
+              print("No routing-candidate comment found; nothing to propose.")
+              sys.exit(0)
+
+          path = f"config/{target}.json"
+          config = json.load(open(path, encoding="utf-8"))
+          if any(r.get("domain") == candidate["domain"] for r in config["rules"]):
+              print("Candidate already present; skipping.")
+              sys.exit(0)
+          config["rules"].append(candidate)
+          branch = f"candidate/issue-{issue_number}"
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+          subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+          subprocess.run(["git", "checkout", "-b", branch], check=True)
+          with open(path, "w", encoding="utf-8") as fh:
+              json.dump(config, fh, ensure_ascii=False, indent=2)
+              fh.write("\n")
+          subprocess.run(["git", "add", path], check=True)
+          subprocess.run(["git", "commit", "-m", f"Add reviewed candidate from issue #{issue_number}"], check=True)
+          subprocess.run(["git", "push", "-f", f"https://x-access-token:{token}@github.com/{repo}.git", branch], check=True)
+          pr = call("POST", base + "/pulls", {
+              "title": f"Кандидат из issue #{issue_number}: {candidate['domain']}",
+              "head": branch,
+              "base": "main",
+              "body": f"Автоматический PR по утверждённому кандидату из issue #{issue_number}.\n\n"
+                      f"- Цель: `{path}`\n- Домен: `{candidate['domain']}`\n\nМерж — вручную после проверки.",
+          })
+          print(f"Opened PR: {pr['html_url']}")
+          PY
