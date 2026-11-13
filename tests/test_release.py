@@ -15,6 +15,7 @@ from publish_release import (
     RELEASE_FILES,
     CredentialSafeRedirect,
     PublishError,
+    RoutingError,
     fingerprint,
     initial_baseline_allowed,
     json_bytes,
@@ -417,7 +418,7 @@ class ReleaseTests(unittest.TestCase):
         request = urllib.request.Request("https://api.github.com/asset", headers={"Authorization": "Bearer fixture-token"})
         redirected = handler.redirect_request(request, None, 302, "Found", {}, "https://release-assets.githubusercontent.com/file")
         self.assertIsNone(redirected.get_header("Authorization"))
-        with self.assertRaises(PublishError):
+        with self.assertRaises(RoutingError):
             handler.redirect_request(request, None, 302, "Found", {}, "http://example.com/file")
     def test_failed_upload_rolls_back_the_draft(self):
         old = {"assets": [], "tag_name": "previous"}

@@ -19,6 +19,7 @@ from typing import Any, cast
 
 from routing.datasets import DATASET_NAMES, dataset_sizes
 from routing.datasets import DATASETS as DATASET_REGISTRY
+from routing.net import CredentialSafeRedirect
 
 try:
     from .errors import RoutingError
@@ -109,12 +110,8 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
         raise PublishError("Release must be a fresh online build with a supported manifest")
     if manifest["environment"]["github_commit"] != commit:
         raise PublishError("Artifact was built from a different commit")
-    recipe_paths = list((root / "config").glob("*.json")) + list((root / "scripts").glob("*.py"))
-    recipe_paths += list((root / "schemas").glob("*.json")) + list((root / "routing").glob("*.py"))
-    recipe_paths += [root / "requirements.txt", root / "requirements-dev.txt", root / "pyproject.toml", root / ".github/workflows/build.yml"]
-    recipe_paths = [path for path in recipe_paths if path.is_file()]
-    recipe = {p.relative_to(root).as_posix(): sha256(p) for p in recipe_paths}
-    if manifest["configuration_sha256"] != recipe:
+    from routing.recipe import recipe_hashes
+    if manifest["configuration_sha256"] != recipe_hashes(root):
         raise PublishError("Artifact recipe does not match this checkout")
     lock = json.loads((root / "config/tools-lock.json").read_text(encoding="utf-8"))
     verify_compiler(manifest["compiler"], lock)
@@ -260,16 +257,6 @@ def prepare_assets(candidate: Path, destination: Path, manifest: dict[str, Any],
     lines = [f"{sha256(path)}  {path.name}\n" for path in sorted(destination.iterdir())]
     (destination / "SHA256SUMS").write_bytes("".join(lines).encode("ascii"))
     return metadata
-
-
-class CredentialSafeRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
-        if urllib.parse.urlsplit(newurl).scheme != "https":
-            raise PublishError("Refusing an insecure asset redirect")
-        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if redirected is not None and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
-            redirected.remove_header("Authorization")
-        return redirected
 
 
 class GitHub:

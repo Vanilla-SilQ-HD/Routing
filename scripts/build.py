@@ -985,11 +985,8 @@ def build(args: Any) -> None:
         write_json(stage / "probes.json", probes)
         write_json(stage / "domain-changes.json", domain_diff)
         write_json(stage / "manual-rules.json", {"vpn": manual_records, "direct_exceptions": direct_records})
-        recipe_paths = list((root / "config").glob("*.json")) + list((root / "scripts").glob("*.py"))
-        recipe_paths += list((root / "schemas").glob("*.json")) + list((root / "routing").glob("*.py"))
-        recipe_paths += [root / "requirements.txt", root / "requirements-dev.txt", root / "pyproject.toml", root / ".github/workflows/build.yml"]
-        recipe_paths = [path for path in recipe_paths if path.is_file()]
-        config_hashes = {str(path.relative_to(root)).replace(os.sep, "/"): file_sha256(path) for path in sorted(recipe_paths)}
+        from routing.recipe import recipe_hashes
+        config_hashes = recipe_hashes(root)
         source_bits = collections.Counter(mask for mask in original_exact.values())
         source_bits.update(original_suffix.values())
         # An aggregator that merely re-publishes other configured sources must not count

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from load_baseline import CredentialSafeRedirect, get, read_manifest_zip, restore_latest_rules
 
 from build import BuildError
+from routing.errors import RoutingError
 
 
 class BaselineArtifactTests(unittest.TestCase):
@@ -45,7 +46,7 @@ class BaselineArtifactTests(unittest.TestCase):
         request = urllib.request.Request("https://api.github.com/artifact", headers={"Authorization": "Bearer fixture-token"})
         redirected = handler.redirect_request(request, None, 302, "Found", {}, "https://storage.example/file")
         self.assertIsNone(redirected.get_header("Authorization"))
-        with self.assertRaises(BuildError):
+        with self.assertRaises(RoutingError):
             handler.redirect_request(request, None, 302, "Found", {}, "http://storage.example/file")
 
 

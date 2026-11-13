@@ -15,23 +15,17 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from routing.net import CredentialSafeRedirect
+
 try:
-    from .build import BuildError, HTTPSRedirect, write_json
+    from .build import BuildError, write_json
     from .logging_utils import configure_logging
 except ImportError:
     from logging_utils import configure_logging  # type: ignore[no-redef]
 
-    from build import BuildError, HTTPSRedirect, write_json  # type: ignore[no-redef]
+    from build import BuildError, write_json  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
-
-
-class CredentialSafeRedirect(HTTPSRedirect):
-    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
-        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if redirected is not None and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
-            redirected.remove_header("Authorization")
-        return redirected
 
 
 def get(url: str, token: str, as_json: bool = True, limit: int = 4 * 1024 * 1024, octet_stream: bool = False) -> Any:
