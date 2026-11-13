@@ -68,8 +68,10 @@ class FakeGitHub:
                          "tag_name": self.tag, "html_url": "https://github.com/owner/Routing/releases/tag/" + self.tag}
         return self.existing
 
-    def delete_release(self, release_id):
+    def delete_release(self, release_id, tag=None):
         self.events.append(f"delete:{release_id}")
+        if tag:
+            self.events.append(f"delete-tag:{tag}")
         return True
 
 
@@ -450,6 +452,56 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in prune], [2, 1])
         self.assertEqual(releases_to_prune(releases, latest_id=8, keep=50), [])
         self.assertEqual(releases_to_prune([], latest_id=None, keep=5), [])
+
+    def test_only_project_tags_are_deleted(self):
+        from publish_release import is_project_tag
+        self.assertTrue(is_project_tag("v2026.11.13-43422576187-1"))
+        self.assertTrue(is_project_tag("rules-43311687566-1"))
+        for foreign in ("v1.0.0", "latest", "release-1", "v2026.11.13", "rules-x-y",
+                        "v2026.11.13-43422576187-1; rm -rf /", "../v2026.11.13-1-1"):
+            self.assertFalse(is_project_tag(foreign), foreign)
+
+    def test_delete_release_also_deletes_project_tag_but_never_foreign(self):
+        from publish_release import GitHub
+
+        class EmptyResponse:
+            def read(self, _limit):
+                return b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class FakeOpener:
+            def __init__(self):
+                self.urls = []
+
+            def open(self, request, timeout):
+                self.urls.append((request.get_method(), request.full_url))
+                return EmptyResponse()
+
+        github = GitHub("owner/Routing", "token")
+        opener = FakeOpener()
+        github.opener = opener
+        github.delete_release(10, "v2026.11.13-43422576187-1")
+        methods = [method for method, _ in opener.urls]
+        self.assertEqual(methods, ["DELETE", "DELETE"])
+        self.assertIn("/git/refs/tags/v2026.11.13-43422576187-1", opener.urls[1][1])
+        with self.assertRaises(PublishError):
+            github.delete_release(11, "v1.0.0")
+
+    def test_overdue_review_warning_does_not_block_but_other_warnings_do(self):
+        # Advisory overdue-review warnings are tolerated on a normal baseline.
+        self.manifest["validation"]["warnings"] = ["Direct exception review is overdue: 1.1.1.1/32 (2027-02-01)"]
+        self.write_manifest()
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
+        # Any other warning must still block publication.
+        self.manifest["validation"]["warnings"].append("Unexpected source problem")
+        self.write_manifest()
+        with self.assertRaises(PublishError):
+            verify_candidate(self.candidate, self.root, self.commit)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+COMMENT_MARKER = "<!-- routing-candidate -->"
+
 
 def sections(body: str) -> dict[str, str]:
     matches = list(re.finditer(r"(?im)^###\s+(.+?)\s*$", body))
@@ -65,15 +67,32 @@ def candidate_from_issue(issue: dict[str, Any]) -> dict[str, str]:
 
 def markdown(candidate: dict[str, str], issue: dict[str, Any]) -> str:
     if expected_route(issue) == "vpn" and candidate["kind"] == "ip_cidr":
-        return (f"Точный IP `{candidate['domain']}` требует ручной проверки: автоматическое добавление "
+        body = (f"Точный IP `{candidate['domain']}` требует ручной проверки: автоматическое добавление "
                 f"IP-адресов в VPN-набор не поддерживается. После подтверждения владельца сети и маршрута "
                 f"добавьте адрес вручную с причиной и датой пересмотра.\n\n"
                 f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
                 f"Источник: {issue['html_url']}\n")
+        return COMMENT_MARKER + "\n" + body
     target = "direct-exceptions" if expected_route(issue) == "direct" else "manual-vpn"
-    return (f"Кандидат для `config/{target}.json`. Проверьте ресурс перед публикацией.\n\n"
+    body = (f"Кандидат для `config/{target}.json`. Проверьте ресурс перед публикацией.\n\n"
             f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
             f"Источник: {issue['html_url']}\n")
+    return COMMENT_MARKER + "\n" + body
+
+
+def find_bot_comment(base: str, issue_number: int, headers: dict[str, str]) -> int | None:
+    """Return the id of a previous bot comment carrying our marker, if any."""
+    url = f"{base}/issues/{issue_number}/comments?per_page=100"
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.build_opener().open(request, timeout=30) as response:
+            comments = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    for item in comments:
+        if isinstance(item, dict) and COMMENT_MARKER in str(item.get("body", "")):
+            return int(item["id"])
+    return None
 
 
 def main() -> None:
@@ -92,12 +111,21 @@ def main() -> None:
     Path(args.markdown).write_text(comment, encoding="utf-8")
     if args.comment:
         repository = os.environ["GITHUB_REPOSITORY"]
+        token = os.environ["GITHUB_TOKEN"]
+        headers = {"Authorization": "Bearer " + token,
+                   "Accept": "application/vnd.github+json", "User-Agent": "Routing-Issue-Bot"}
+        base = f"https://api.github.com/repos/{repository}"
+        existing_id = find_bot_comment(base, issue["number"], headers)
+        if existing_id is not None:
+            url = f"{base}/issues/comments/{existing_id}"
+            method = "PATCH"
+        else:
+            url = f"{base}/issues/{issue['number']}/comments"
+            method = "POST"
         request = urllib.request.Request(
-            f"https://api.github.com/repos/{repository}/issues/{issue['number']}/comments",
+            url,
             data=json.dumps({"body": comment}, ensure_ascii=False).encode("utf-8"),
-            headers={"Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
-                     "Accept": "application/vnd.github+json", "User-Agent": "Routing-Issue-Bot"},
-            method="POST")
+            headers=headers, method=method)
         with urllib.request.build_opener().open(request, timeout=30):
             pass
     logger.info(json.dumps(candidate, ensure_ascii=False))

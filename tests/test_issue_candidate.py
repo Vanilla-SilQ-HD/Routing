@@ -64,5 +64,45 @@ class IssueCandidateTests(unittest.TestCase):
             self.assertIn("config/manual-vpn.json", (root / "candidate.md").read_text(encoding="utf-8"))
 
 
+    def test_markdown_carries_update_marker(self):
+        issue = {"number": 7, "title": "t", "html_url": "https://example.com/7",
+                 "body": "### Resource\nexample.com\n\n### Expected\nVPN\n\n### Actual\nDirect"}
+        candidate = candidate_from_issue(issue)
+        from issue_candidate import COMMENT_MARKER
+        self.assertTrue(markdown(candidate, issue).startswith(COMMENT_MARKER))
+
+    def test_find_bot_comment_returns_marked_comment_id(self):
+        import json
+
+        from issue_candidate import COMMENT_MARKER, find_bot_comment
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class FakeOpener:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def open(self, request, timeout):
+                return FakeResponse(self.payload)
+
+        comments = [{"id": 1, "body": "unrelated"},
+                    {"id": 42, "body": COMMENT_MARKER + "\nКандидат..."}]
+        with patch("urllib.request.build_opener", return_value=FakeOpener(comments)):
+            self.assertEqual(find_bot_comment("https://api.github.com/repos/o/r", 7, {}), 42)
+        with patch("urllib.request.build_opener", return_value=FakeOpener([{"id": 1, "body": "x"}])):
+            self.assertIsNone(find_bot_comment("https://api.github.com/repos/o/r", 7, {}))
+
+
 if __name__ == "__main__":
     unittest.main()

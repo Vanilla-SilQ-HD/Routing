@@ -90,10 +90,22 @@ def classify_result(result: dict[str, Any]) -> str:
 
 
 def load_previous(url: str) -> dict[str, Any]:
+    """Load prior monitoring history.
+
+    A 404 simply means the first run (empty history is fine). Any other failure
+    (network error, 5xx, invalid JSON) must not silently wipe the stored history:
+    we mark it as unrestored so the caller can avoid overwriting good data.
+    """
     try:
         return cast(dict[str, Any], request_json(url))
-    except (OSError, ValueError, RuntimeError, urllib.error.URLError):
-        return cast(dict[str, Any], {"history": []})
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {"history": [], "history_restored": True}
+        logger.warning("Could not load previous monitoring history (HTTP %s); keeping it unrestored", exc.code)
+        return {"history": [], "history_restored": False}
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+        logger.warning("Could not load previous monitoring history (%s); keeping it unrestored", exc)
+        return {"history": [], "history_restored": False}
 
 
 def summarize_results(target: str, results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -174,6 +186,7 @@ def main() -> None:
     configure_logging(args.debug)
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     previous = load_previous(args.pages_url)
+    history_restored = previous.get("history_restored", True)
     history = previous.get("history", [])[-29:]
     if not args.offline and os.environ.get("RUN_MONITOR", "true").lower() == "true":
         results = [run_probe(config, target) for target in config["targets"]]
@@ -184,6 +197,7 @@ def main() -> None:
         "provider": config["provider"]["name"],
         "vpn_measurement": "not_performed",
         "automatic_route_changes": False,
+        "history_restored": history_restored,
         "history": history,
     }
     Path(args.output).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

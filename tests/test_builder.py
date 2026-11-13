@@ -179,6 +179,23 @@ class ManualAndDiffTests(unittest.TestCase):
             build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
                                     now=dt.date(2027, 1, 1))
 
+    def test_overdue_direct_rule_is_only_a_warning_in_non_strict_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "manual.json"
+            psl = build.PublicSuffixes("com\n")
+            rule = {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "test", "review_after": "2027-01-01"}
+            build.write_json(path, {"schema_version": 1, "rules": [rule]})
+            warnings: list = []
+            # Non-strict (scheduled) mode collects a warning instead of raising.
+            build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
+                                    now=dt.date(2027, 1, 2), strict_review=False, review_warnings=warnings)
+            self.assertEqual(len(warnings), 1)
+            self.assertIn("overdue", warnings[0])
+            # Strict (PR/push) mode still raises.
+            with self.assertRaisesRegex(build.BuildError, "overdue"):
+                build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
+                                        now=dt.date(2027, 1, 2), strict_review=True)
+
     def test_semantic_diff_distinguishes_minimization_from_lost_coverage(self):
         previous = {"version": 3, "rules": [{"domain": ["same.example", "old.other"],
                                              "domain_suffix": ["child.example"]}]}

@@ -108,5 +108,29 @@ class MonitorTests(unittest.TestCase):
             self.assertTrue((root / "out.html").is_file())
 
 
+    def test_load_previous_distinguishes_404_from_real_failures(self):
+        import urllib.error
+
+        from monitor import load_previous
+        # 404 = first run: empty history is acceptable and considered restored.
+        not_found = urllib.error.HTTPError("https://x", 404, "Not Found", {}, None)
+        with patch("monitor.request_json", side_effect=not_found):
+            result = load_previous("https://example/monitoring.json")
+        self.assertEqual(result["history"], [])
+        self.assertTrue(result["history_restored"])
+        # A server/network error must NOT silently wipe history.
+        for exc in (urllib.error.HTTPError("https://x", 500, "Server Error", {}, None),
+                    OSError("connection reset"), ValueError("bad json")):
+            with patch("monitor.request_json", side_effect=exc):
+                result = load_previous("https://example/monitoring.json")
+            self.assertEqual(result["history"], [])
+            self.assertFalse(result["history_restored"])
+        # A successful load is marked restored.
+        with patch("monitor.request_json", return_value={"history": [{"generated_at": "t", "results": []}]}):
+            result = load_previous("https://example/monitoring.json")
+        self.assertTrue(result.get("history_restored", True))
+        self.assertEqual(len(result["history"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

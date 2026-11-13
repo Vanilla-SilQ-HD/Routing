@@ -44,6 +44,16 @@ EVIDENCE_FILES += ["excluded.json", "probes.json", "domain-changes.json", "manua
                    "report.html", "status.json", "updated.json", "presets.user.json"]
 MAX_ASSET_BYTES = 128 * 1024 * 1024
 
+# Only tags produced by this project's release automation may be deleted.
+PROJECT_TAG_PATTERNS = (
+    re.compile(r"v\d{4}\.\d{2}\.\d{2}-\d+-\d+\Z"),
+    re.compile(r"rules-\d+-\d+\Z"),
+)
+
+
+def is_project_tag(tag: str) -> bool:
+    return any(pattern.fullmatch(tag) for pattern in PROJECT_TAG_PATTERNS)
+
 
 def sha256(path: Path) -> str:
     with path.open("rb") as stream:
@@ -192,8 +202,14 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
         expected_warnings = ["First build has no previous published version to compare."]
         if not allow_initial_baseline or validation["warnings"] != expected_warnings:
             raise PublishError("Initial baseline requires a first release or an explicit manual reset")
-    elif validation["baseline"] != "previous-successful-or-approved-manifest" or validation["warnings"]:
+    elif validation["baseline"] != "previous-successful-or-approved-manifest":
         raise PublishError("Build has an unknown baseline or unresolved validation warnings")
+    else:
+        # Overdue Direct-exception reviews are advisory on scheduled builds; any other
+        # warning still blocks publication.
+        blocking = [w for w in validation["warnings"] if not str(w).startswith("Direct exception review is overdue")]
+        if blocking:
+            raise PublishError("Build has unresolved validation warnings: " + "; ".join(map(str, blocking)))
     return cast(dict[str, Any], manifest)
 
 
@@ -289,9 +305,30 @@ class GitHub:
                 return releases
             page += 1
 
-    def delete_release(self, release_id: int) -> bool:
+    def delete_release(self, release_id: int, tag: str | None = None) -> bool:
         self.request("DELETE", self.base + f"/releases/{int(release_id)}")
+        if tag:
+            self.delete_tag(tag)
         return True
+
+    def delete_tag(self, tag: str) -> bool:
+        """Delete a project-owned git tag ref. Foreign tags are never touched."""
+        if not is_project_tag(tag):
+            raise PublishError(f"Refusing to delete a non-project tag: {tag}")
+        self.request("DELETE", self.base + "/git/refs/tags/" + urllib.parse.quote(tag, safe=""))
+        return True
+
+    def list_tags(self) -> list[str]:
+        tags: list[str] = []
+        page = 1
+        while True:
+            batch = self.request("GET", self.base + f"/tags?per_page=100&page={page}")
+            if not isinstance(batch, list):
+                raise PublishError("Unexpected tags listing response")
+            tags.extend(str(item["name"]) for item in batch)
+            if len(batch) < 100:
+                return tags
+            page += 1
 
 
     def create_draft(self, tag: str, commit: str, title: str, body: str) -> Any:
@@ -376,6 +413,8 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
 | {changes['added']:,} | {changes['removed']:,} | **{changes['effective_added']:,}** | **{changes['effective_removed']:,}** |
 
 Полный semantic diff: [domain-changes.json]({base}domain-changes.json). Источники и происхождение записей: [manifest.json]({base}manifest.json).
+
+Тип baseline: `{manifest.get('domain_changes', {}).get('baseline', 'unknown')}`.
 
 ## Проверки
 
@@ -490,7 +529,7 @@ def main() -> None:
         if current is None:
             raise PublishError("Published latest release cannot be found for retention")
         for old in releases_to_prune(github.list_all_releases(), current["id"], args.keep_releases):
-            github.delete_release(old["id"])
+            github.delete_release(old["id"], old.get("tag_name"))
             logger.info("Deleted old release %s", old["tag_name"])
     logger.info(json.dumps(result))
     if os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -524,9 +563,29 @@ def retention_main() -> None:
         action = "deleting" if args.apply else "would delete"
         logger.info(f"{action}: {release['tag_name']} (id={release['id']}, published_at={release.get('published_at')})")
         if args.apply:
-            github.delete_release(release["id"])
+            github.delete_release(release["id"], release.get("tag_name"))
     logger.info(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0,
                       "would_delete": len(to_delete)}))
+
+
+def prune_orphan_tags_main() -> None:
+    configure_logging()
+    parser = argparse.ArgumentParser(
+        description="Delete project-owned git tags that no longer have a release. Dry-run unless --apply is passed.")
+    parser.add_argument("--apply", action="store_true", help="Actually delete orphan tags")
+    args = parser.parse_args()
+    repository = os.environ["GITHUB_REPOSITORY"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise PublishError("Invalid repository")
+    github = GitHub(repository, os.environ["GITHUB_TOKEN"])
+    released_tags = {r.get("tag_name") for r in github.list_all_releases()}
+    orphans = [tag for tag in github.list_tags() if is_project_tag(tag) and tag not in released_tags]
+    for tag in orphans:
+        logger.info("%s: %s", "deleting" if args.apply else "would delete", tag)
+        if args.apply:
+            github.delete_tag(tag)
+    logger.info(json.dumps({"status": "applied" if args.apply else "dry-run",
+                            "deleted": len(orphans) if args.apply else 0, "would_delete": len(orphans)}))
 
 
 if __name__ == "__main__":
@@ -534,6 +593,9 @@ if __name__ == "__main__":
         if len(sys.argv) > 1 and sys.argv[1] == "retention":
             sys.argv.pop(1)
             retention_main()
+        elif len(sys.argv) > 1 and sys.argv[1] == "prune-orphan-tags":
+            sys.argv.pop(1)
+            prune_orphan_tags_main()
         else:
             main()
     except (PublishError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:

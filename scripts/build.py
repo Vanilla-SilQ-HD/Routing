@@ -337,7 +337,7 @@ def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
-def read_manual_rules(path: str | Path, psl: PublicSuffixes, *, require_review: bool = False, allow_ip: bool = False, now: dt.date | None = None) -> tuple[dict[str, Any], dict[str, Any], list[Any], list[dict[str, Any]]]:
+def read_manual_rules(path: str | Path, psl: PublicSuffixes, *, require_review: bool = False, allow_ip: bool = False, now: dt.date | None = None, strict_review: bool = True, review_warnings: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], list[Any], list[dict[str, Any]]]:
     path = Path(path)
     data = read_json(path)
     if data.get("schema_version") != 1 or not isinstance(data.get("rules"), list):
@@ -360,7 +360,11 @@ def read_manual_rules(path: str | Path, psl: PublicSuffixes, *, require_review: 
                 raise BuildError(f"Direct exception review_after must be an ISO date in {path.name}") from exc
             current_date = now or dt.datetime.now(dt.UTC).date()
             if review_after < current_date:
-                raise BuildError(f"Direct exception review is overdue: {item['domain']} ({review_after})")
+                message = f"Direct exception review is overdue: {item['domain']} ({review_after})"
+                if strict_review:
+                    raise BuildError(message)
+                if review_warnings is not None:
+                    review_warnings.append(message)
         if kind == "ip_cidr":
             if not allow_ip:
                 raise BuildError(f"IP rules are supported only for Direct exceptions: {path.name}")
@@ -584,9 +588,14 @@ def build(args: Any) -> None:
     psl = PublicSuffixes(fetched[psl_source["id"]][0].read_text(encoding="utf-8-sig"))
     if psl.count < psl_source["min_entries"]:
         raise BuildError("Public Suffix List is unexpectedly small")
+    # Overdue Direct-exception reviews are fatal on PR/push (a new stale rule must not
+    # be merged), but only a warning on scheduled/manual runs so planned updates keep working.
+    strict_review = os.environ.get("GITHUB_EVENT_NAME") in {"pull_request", "push"}
+    review_warnings: list[str] = []
     manual_exact, manual_suffix, _, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
     direct_exact, direct_suffix, direct_ip_rules, direct_records = read_manual_rules(
-        root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True)
+        root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True,
+        strict_review=strict_review, review_warnings=review_warnings)
     exact: dict[str, int] = {}
     suffix: dict[str, int] = {}
     exclusions: dict[tuple[str, str], dict[str, Any]] = {}
@@ -656,6 +665,9 @@ def build(args: Any) -> None:
         if any(not match_rule(name, exact, suffix) for name in names):
             raise BuildError("Minimization lost an input condition")
     validation = validate_previous(previous, stats, count, policy)
+    if review_warnings:
+        validation.setdefault("warnings", []).extend(review_warnings)
+        logger.warning("Direct exception review: %s", "; ".join(review_warnings))
     registry_by_network: dict[Any, int] = {}
     registry_cidr_by_network: dict[Any, int] = {}
     registry_source_stats = []
@@ -712,6 +724,13 @@ def build(args: Any) -> None:
         previous_rules_path = Path(args.previous).with_name("blocked-domains.json")
         if previous_rules_path.is_file():
             previous_rules = read_json(previous_rules_path)
+        else:
+            # A restored baseline manifest without its domain rules means the semantic
+            # diff would silently degrade to a first-build. Refuse to continue so the
+            # "no hidden coverage loss" guarantee actually holds.
+            raise BuildError(
+                "Baseline manifest was restored but previous/blocked-domains.json is missing; "
+                "the semantic diff cannot be computed. Restore the rules or reset the baseline explicitly.")
     domain_diff = make_domain_diff(previous_rules, exact, suffix, original_exact, original_suffix, sources_with_manual)
     target = Path(args.output).resolve() if args.output else root / "dist"
     if target.exists() and any(target.iterdir()):
@@ -819,7 +838,6 @@ def build(args: Any) -> None:
             {"id": "routing", "url": release_base + "{}", "names": catalog_names}
         ]})
         write_json(stage / "presets.user.json", make_presets(release_base))
-        built_at = utc_now()
         write_json(stage / "status.json", {"schemaVersion": 1, "label": "domains",
                                            "message": f"{count:,}".replace(",", " "), "color": "brightgreen"})
         write_json(stage / "updated.json", {"schemaVersion": 1, "label": "updated",
