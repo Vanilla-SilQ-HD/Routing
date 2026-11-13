@@ -7,9 +7,9 @@ from report import make_report
 
 
 class ReportTests(unittest.TestCase):
-    def test_dashboard_is_self_contained_and_embeds_safe_data(self):
+    def _manifest(self):
         compiler = {"version": "sing-box version 1.14.4", "sing_box_check": "passed"}
-        manifest = {
+        return {
             "built_at": "2026-11-10T00:00:00+00:00",
             "environment": {"github_commit": "a" * 40, "repository": "owner/Routing"},
             "output": {"total_conditions": 2, "exact": 1, "suffix": 1, "srs_bytes": 100,
@@ -45,6 +45,9 @@ class ReportTests(unittest.TestCase):
             "compiler": compiler,
             "scope": {"router_access": False},
         }
+
+    def test_dashboard_is_self_contained_and_embeds_safe_data(self):
+        manifest = self._manifest()
         probes = [{"domain": "new.example", "base_decision": "VPN", "final_decision": "VPN",
                    "expected": "VPN", "matched_rule": "new.example", "sources": ["source"]}]
         exclusions = [{"domain": "x</script>", "kind": "domain_suffix",
@@ -69,6 +72,36 @@ class ReportTests(unittest.TestCase):
         self.assertIn('safeUrl(s.url)', report)
         self.assertNotIn('href="${s.url}"', report)
         self.assertNotIn('href="${x.url}"', report)
+
+    def test_golden_payload_structure(self):
+        # Golden test: the embedded ROUTING_DATA payload has a stable, documented shape.
+        import json
+        report = make_report(self._manifest(), [], [])
+        payload = report.split("window.ROUTING_DATA=", 1)[1].split(";</script>", 1)[0]
+        data = json.loads(payload.replace("<\\/", "</"))
+        self.assertEqual(set(data), {"meta", "summary", "downloads", "sources", "probes",
+                                     "changes", "exclusions", "services", "registry",
+                                     "registryCidr", "directRulesList", "validation"})
+        self.assertEqual(data["summary"]["domains"], 2)
+        self.assertEqual(data["summary"]["smartDomains"], 1)
+        self.assertEqual(len(data["downloads"]), 7)
+        titles = [d["title"] for d in data["downloads"]]
+        self.assertIn("Домены · Smart", titles)
+        for download in data["downloads"]:
+            self.assertTrue(download["url"].startswith("https://"))
+            self.assertTrue(download["url"].endswith(".srs"))
+            self.assertEqual(len(download["sha256"]), 64)
+
+    def test_xss_payload_in_source_and_domain_is_escaped(self):
+        manifest = self._manifest()
+        manifest["sources"][0]["id"] = "<script>alert(1)</script>"
+        manifest["sources"][0]["url"] = "https://example.com/?x=<script>"
+        probes = [{"domain": "<img src=x onerror=alert(1)>", "base_decision": "VPN",
+                   "final_decision": "VPN", "expected": "VPN", "matched_rule": "x", "sources": ["s"]}]
+        report = make_report(manifest, [], probes)
+        # The raw closing-script breakout must never appear unescaped in the document.
+        self.assertNotIn("<script>alert(1)</script>", report)
+        self.assertIn("<\\/script>", report)
 
 
 if __name__ == "__main__":
