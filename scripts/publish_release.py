@@ -48,6 +48,7 @@ MAX_ASSET_BYTES = 128 * 1024 * 1024
 PROJECT_TAG_PATTERNS = (
     re.compile(r"v\d{4}\.\d{2}\.\d{2}-\d+-\d+\Z"),
     re.compile(r"rules-\d+-\d+\Z"),
+    re.compile(r"candidate-\d{4}\.\d{2}\.\d{2}-\d+-\d+\Z"),
 )
 
 
@@ -202,6 +203,10 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
         expected_warnings = ["First build has no previous published version to compare."]
         if not allow_initial_baseline or validation["warnings"] != expected_warnings:
             raise PublishError("Initial baseline requires a first release or an explicit manual reset")
+    elif validation["baseline"] == "large-change-candidate":
+        # A staged large-growth candidate is published as a pre-release, never as Latest.
+        if not any(str(w).startswith("Large coverage growth staged for review") for w in validation["warnings"]):
+            raise PublishError("Large-change candidate is missing its review warning")
     elif validation["baseline"] != "previous-successful-or-approved-manifest":
         raise PublishError("Build has an unknown baseline or unresolved validation warnings")
     else:
@@ -331,10 +336,10 @@ class GitHub:
             page += 1
 
 
-    def create_draft(self, tag: str, commit: str, title: str, body: str) -> Any:
+    def create_draft(self, tag: str, commit: str, title: str, body: str, prerelease: bool = False) -> Any:
         return self.request("POST", self.base + "/releases", json_bytes({
             "tag_name": tag, "target_commitish": commit, "name": title, "body": body,
-            "draft": True, "prerelease": False, "make_latest": "false",
+            "draft": True, "prerelease": prerelease, "make_latest": "false",
         }))
 
     def upload(self, release_id: int, path: Path) -> Any:
@@ -346,9 +351,10 @@ class GitHub:
     def download(self, asset: dict[str, Any], limit: int = MAX_ASSET_BYTES) -> bytes:
         return cast(bytes, self.request("GET", self.base + f"/releases/assets/{int(asset['id'])}", binary=True, limit=limit))
 
-    def publish(self, release_id: int) -> Any:
+    def publish(self, release_id: int, prerelease: bool = False) -> Any:
         return self.request("PATCH", self.base + f"/releases/{int(release_id)}",
-                            json_bytes({"draft": False, "prerelease": False, "make_latest": "true"}))
+                            json_bytes({"draft": False, "prerelease": prerelease,
+                                        "make_latest": "false" if prerelease else "true"}))
 
 
 def human_size(value: int) -> str:
@@ -456,9 +462,15 @@ def publish(assets: Path, manifest: dict[str, Any], metadata: dict[str, Any], gi
                             or checksum != (assets / (name + ".srs.sha256")).read_bytes()):
                         raise PublishError(f"Unchanged release failed binary integrity verification: {name}")
                 return {"status": "unchanged", "release_url": latest["html_url"], "tag": latest["tag_name"]}
+    is_candidate = manifest["validation"]["baseline"] == "large-change-candidate"
     body = make_release_body(manifest, metadata, github.repository)
+    if is_candidate:
+        body = ("> **Candidate pre-release** — покрытие выросло сверх порога. Набор опубликован для проверки "
+                "и **не** помечен как Latest. Постоянные URL `releases/latest/download/...` продолжают вести на "
+                "предыдущий стабильный набор. Подтвердите через workflow `promote_candidate`.\n\n") + body
     release = github.create_draft(tag, manifest["environment"]["github_commit"],
-                                  "Routing · " + manifest["built_at"], body)
+                                  ("Routing candidate · " if is_candidate else "Routing · ") + manifest["built_at"],
+                                  body, prerelease=is_candidate)
     if release.get("draft") is not True:
         raise PublishError("GitHub did not create a draft; refusing asset upload")
     try:
@@ -481,10 +493,11 @@ def publish(assets: Path, manifest: dict[str, Any], metadata: dict[str, Any], gi
         except Exception as cleanup_error:
             logger.warning("Draft rollback failed for release %s: %s", release["id"], cleanup_error)
         raise
-    published = github.publish(release["id"])
-    if published["draft"] or published["prerelease"]:
-        raise PublishError("Release was not published as a stable version")
-    return {"status": "published", "release_url": published["html_url"], "tag": published["tag_name"]}
+    published = github.publish(release["id"], prerelease=is_candidate)
+    if published["draft"] or published["prerelease"] != is_candidate:
+        raise PublishError("Release was not published in the expected stable/candidate state")
+    return {"status": "candidate" if is_candidate else "published",
+            "release_url": published["html_url"], "tag": published["tag_name"]}
 
 
 def main() -> None:
@@ -522,7 +535,10 @@ def main() -> None:
 
     metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt,
                               previous_release_tag=latest.get("tag_name") if latest else None)
-    tag = f"v{manifest['built_at'][:10].replace('-', '.')}-{run_id}-{attempt}"
+    is_candidate = manifest["validation"]["baseline"] == "large-change-candidate"
+    date_part = manifest['built_at'][:10].replace('-', '.')
+    tag = (f"candidate-{date_part}-{run_id}-{attempt}" if is_candidate
+           else f"v{date_part}-{run_id}-{attempt}")
     result = publish(assets, manifest, metadata, github, tag)
     if args.keep_releases and result["status"] == "published":
         current = github.latest()

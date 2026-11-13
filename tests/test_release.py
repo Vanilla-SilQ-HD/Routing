@@ -40,10 +40,11 @@ class FakeGitHub:
         self.events.append("latest")
         return self.existing
 
-    def create_draft(self, tag, commit, title, body):
+    def create_draft(self, tag, commit, title, body, prerelease=False):
         self.events.append("draft")
         self.tag = tag
         self.body = body
+        self.prerelease = prerelease
         self.uploaded = []
         return {"id": 10, "draft": True}
 
@@ -62,9 +63,9 @@ class FakeGitHub:
         self.events.append("download:" + asset["name"])
         return b"corrupted" if asset["name"] == self.corrupt_download else self.stored[asset["id"]]
 
-    def publish(self, release_id):
+    def publish(self, release_id, prerelease=False):
         self.events.append("publish")
-        self.existing = {"draft": False, "prerelease": False, "assets": copy.deepcopy(self.uploaded),
+        self.existing = {"draft": False, "prerelease": prerelease, "assets": copy.deepcopy(self.uploaded),
                          "tag_name": self.tag, "html_url": "https://github.com/owner/Routing/releases/tag/" + self.tag}
         return self.existing
 
@@ -499,6 +500,25 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
         # Any other warning must still block publication.
         self.manifest["validation"]["warnings"].append("Unexpected source problem")
+        self.write_manifest()
+        with self.assertRaises(PublishError):
+            verify_candidate(self.candidate, self.root, self.commit)
+
+    def test_large_change_candidate_publishes_as_prerelease_not_latest(self):
+        self.manifest["validation"] = {"baseline": "large-change-candidate",
+                                       "warnings": ["Large coverage growth staged for review: 1000 -> 5000"]}
+        self.write_manifest()
+        # verify_candidate accepts the candidate baseline.
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
+        github = FakeGitHub()
+        result = self.publish_to(github, tag="candidate-2026.11.20-123-1")
+        self.assertEqual(result["status"], "candidate")
+        self.assertTrue(github.prerelease)
+        self.assertIn("Candidate pre-release", github.body)
+        self.assertTrue(result["release_url"])
+
+    def test_candidate_baseline_requires_review_warning(self):
+        self.manifest["validation"] = {"baseline": "large-change-candidate", "warnings": []}
         self.write_manifest()
         with self.assertRaises(PublishError):
             verify_candidate(self.candidate, self.root, self.commit)

@@ -1,0 +1,68 @@
+name: Promote a reviewed candidate release
+
+# After reviewing a candidate pre-release (large coverage growth), a maintainer
+# runs this workflow with the candidate tag. The candidate is promoted to a
+# stable Latest release without rebuilding or re-uploading any assets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Candidate tag to promote, e.g. candidate-2026.11.20-123456-1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Promote the candidate to a stable Latest release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          tag = os.environ["TAG"].strip()
+          if not re.fullmatch(r"candidate-\d{4}\.\d{2}\.\d{2}-\d+-\d+", tag):
+              sys.exit(f"Refusing to promote a non-candidate tag: {tag}")
+          headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "Routing-Promote/1",
+          }
+
+          def call(method, url, data=None):
+              request = urllib.request.Request(
+                  url, data=json.dumps(data).encode() if data is not None else None,
+                  headers=headers, method=method)
+              with urllib.request.build_opener().open(request, timeout=30) as response:
+                  payload = response.read()
+              return json.loads(payload) if payload else None
+
+          base = f"https://api.github.com/repos/{repo}"
+          release = call("GET", base + f"/releases/tags/{tag}")
+          if not release.get("prerelease"):
+              sys.exit(f"Release {tag} is not a pre-release candidate; nothing to promote.")
+          new_tag = re.sub(r"^candidate-", "v", tag)
+          updated = call("PATCH", base + f"/releases/{release['id']}", {
+              "tag_name": new_tag,
+              "name": release["name"].replace("Routing candidate ·", "Routing ·"),
+              "prerelease": False,
+              "make_latest": "true",
+          })
+          print(f"Promoted {tag} -> {updated['tag_name']} as Latest: {updated['html_url']}")
+          PY

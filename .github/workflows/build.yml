@@ -7,6 +7,10 @@ on:
         description: 'After reviewing an intentional large change, start a new baseline'
         type: boolean
         default: false
+      allow_large_change:
+        description: 'Stage a large coverage growth as a candidate pre-release for review'
+        type: boolean
+        default: false
   schedule:
     - cron: '35 0,6,12,18 * * *'
     - cron: '17 3 * * *'
@@ -125,7 +129,12 @@ jobs:
           if [ -f previous/manifest.json ]; then
             args+=(--previous previous/manifest.json)
           fi
+          if [ "${ALLOW_LARGE_CHANGE}" = "true" ]; then
+            args+=(--allow-large-change)
+          fi
           python scripts/build.py --output dist "${args[@]}"
+        env:
+          ALLOW_LARGE_CHANGE: ${{ inputs.allow_large_change || false }}
       - name: Save complete reviewable result
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -155,6 +164,8 @@ jobs:
       actions: read
     env:
       PYTHONUTF8: '1'
+    outputs:
+      stable: ${{ steps.baseline.outputs.stable }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -173,11 +184,21 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           RESET_BASELINE: ${{ inputs.reset_baseline || false }}
         run: python scripts/publish_release.py --input incoming/dist --output release
+      - id: baseline
+        name: Expose whether this run produced a stable (Latest) release
+        run: |
+          python - <<'PY'
+          import json, os
+          baseline = json.load(open("incoming/dist/manifest.json", encoding="utf-8"))["validation"]["baseline"]
+          stable = "false" if baseline == "large-change-candidate" else "true"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"stable={stable}\n")
+          PY
 
   release-retention:
     name: Keep only recent published releases
     needs: publish
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.publish.outputs.stable == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -199,7 +220,7 @@ jobs:
   publish-data:
     name: Mirror rules and baseline to the data branch
     needs: publish
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.publish.outputs.stable == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -244,7 +265,7 @@ jobs:
   monitor:
     name: Measure external availability
     needs: publish
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.publish.outputs.stable == 'true'
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -280,7 +301,7 @@ jobs:
   pages:
     name: Publish Routing Dashboard
     needs: [publish, monitor]
-    if: always() && github.ref == 'refs/heads/main' && needs.publish.result == 'success'
+    if: always() && github.ref == 'refs/heads/main' && needs.publish.result == 'success' && needs.publish.outputs.stable == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

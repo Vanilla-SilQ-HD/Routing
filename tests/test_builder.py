@@ -320,6 +320,18 @@ class BaselineGuardTests(unittest.TestCase):
         self.assertEqual(result["baseline"], "first-build")
         self.assertTrue(result["warnings"])
 
+    def test_large_growth_is_staged_only_when_explicitly_allowed(self):
+        # By default a large growth is fatal (guarded above). With the opt-in flag it
+        # becomes a review candidate instead of an error.
+        result = build.validate_previous(self.previous, [{"id": "a", "unique_conditions": 5000}],
+                                         5000, self.policy, self.now, allow_large_change=True)
+        self.assertEqual(result["baseline"], "large-change-candidate")
+        self.assertTrue(any("Large coverage growth" in w for w in result["warnings"]))
+        # A drop is fatal even with the flag: it may hide lost coverage.
+        with self.assertRaises(build.BuildError):
+            build.validate_previous(self.previous, [{"id": "a", "unique_conditions": 100}],
+                                    100, self.policy, self.now, allow_large_change=True)
+
 
 class AWGPresetTests(unittest.TestCase):
     def test_vpn_presets_never_route_direct_exceptions_to_vpn(self):

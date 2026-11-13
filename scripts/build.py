@@ -364,7 +364,7 @@ def minimize(exact: dict[str, int], suffix: dict[str, int]) -> tuple[dict[str, i
     return minimal_exact, minimal_suffix
 
 
-def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any]], count: int, policy: dict[str, Any], now: dt.datetime | None = None) -> dict[str, Any]:
+def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any]], count: int, policy: dict[str, Any], now: dt.datetime | None = None, allow_large_change: bool = False) -> dict[str, Any]:
     if previous is None:
         return {"baseline": "first-build", "warnings": ["First build has no previous published version to compare."]}
     if previous.get("schema_version") != 1:
@@ -377,13 +377,26 @@ def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any
     previous_sources = {s["id"]: s for s in previous["sources"]}
     if set(previous_sources) != {s["id"] for s in stats}:
         raise BuildError("Source composition changed; explicit baseline review required")
+    oversized = False
     for current in stats:
         before = previous_sources[current["id"]]["unique_conditions"]
-        if not before or not before * (1 - v["max_source_drop_fraction"]) <= current["unique_conditions"] <= before * (1 + v["max_source_growth_fraction"]):
+        if not before or current["unique_conditions"] < before * (1 - v["max_source_drop_fraction"]):
+            # A shrinking source is always fatal: it may hide lost coverage.
             raise BuildError(f"Unexpected source size change: {current['id']} {before} -> {current['unique_conditions']}")
+        if current["unique_conditions"] > before * (1 + v["max_source_growth_fraction"]):
+            oversized = True
     before = previous["output"]["total_conditions"]
-    if not before or not before * (1 - v["max_output_drop_fraction"]) <= count <= before * (1 + v["max_output_growth_fraction"]):
+    if not before or count < before * (1 - v["max_output_drop_fraction"]):
         raise BuildError(f"Unexpected output size change: {before} -> {count}")
+    if count > before * (1 + v["max_output_growth_fraction"]):
+        oversized = True
+    if oversized:
+        if not allow_large_change:
+            raise BuildError(f"Unexpected output size change: {before} -> {count}")
+        # A large growth is staged as a candidate pre-release instead of failing, so a
+        # maintainer can review the diff and promote it explicitly. Never becomes Latest.
+        return {"baseline": "large-change-candidate", "baseline_built_at": previous["built_at"],
+                "warnings": [f"Large coverage growth staged for review: {before} -> {count}"]}
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
@@ -716,7 +729,7 @@ def build(args: Any) -> None:
     for names in (original_exact, original_suffix):
         if any(not match_rule(name, exact, suffix) for name in names):
             raise BuildError("Minimization lost an input condition")
-    validation = validate_previous(previous, stats, count, policy)
+    validation = validate_previous(previous, stats, count, policy, allow_large_change=getattr(args, "allow_large_change", False))
     if review_warnings:
         validation.setdefault("warnings", []).extend(review_warnings)
         logger.warning("Direct exception review: %s", "; ".join(review_warnings))
@@ -976,6 +989,7 @@ def main() -> None:
     parser.add_argument("--offline", action="store_true", help="Replay only SHA-256-verified cached inputs; no network")
     parser.add_argument("--fetch-only", action="store_true")
     parser.add_argument("--previous", help="Previous successful/approved manifest.json for drift guards")
+    parser.add_argument("--allow-large-change", action="store_true", help="Stage a large coverage growth as a candidate pre-release instead of failing")
     parser.add_argument("--previous-rules", help="Previous blocked-domains.json for the semantic diff")
     parser.add_argument("--output", help="A new, empty output directory")
     parser.add_argument("--sing-box", help="Path to the pinned sing-box compiler")
