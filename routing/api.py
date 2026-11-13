@@ -5,6 +5,8 @@ import importlib
 import sys
 from types import ModuleType
 
+from .domains import minimize, normalize_domain
+
 
 def _load(name: str) -> ModuleType:
     if name in sys.modules:
@@ -30,8 +32,6 @@ PublishError = _publish_release.PublishError
 RoutingError = _load("errors").RoutingError
 ServiceNetworkError = _load("service_networks").ServiceNetworkError
 classify_result = _monitor.classify_result
-minimize = _build.minimize
-normalize_domain = _build.normalize_domain
 normalize_networks = _load("service_networks").normalize_networks
 parse_checksums = _publish_release.parse_checksums
 releases_to_prune = _publish_release.releases_to_prune

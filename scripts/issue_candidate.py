@@ -12,13 +12,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from routing.domains import normalize_domain
+
 try:
-    from .build import normalize_domain, write_json
+    from .build import write_json
     from .logging_utils import configure_logging
 except ImportError:
     from logging_utils import configure_logging  # type: ignore[no-redef]
 
-    from build import normalize_domain, write_json  # type: ignore[no-redef]
+    from build import write_json  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
