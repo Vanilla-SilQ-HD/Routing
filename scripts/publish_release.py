@@ -17,6 +17,11 @@ import zipfile
 from pathlib import Path
 from typing import Any, cast
 
+# Make the project root importable regardless of the current working directory,
+# so `python scripts/publish_release.py` works from any checkout location.
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from routing.datasets import DATASET_NAMES, dataset_sizes
 from routing.datasets import DATASETS as DATASET_REGISTRY
 from routing.net import CredentialSafeRedirect

@@ -8,9 +8,13 @@ import json
 import logging
 import os
 import re
+import sys
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routing.domains import normalize_domain
 

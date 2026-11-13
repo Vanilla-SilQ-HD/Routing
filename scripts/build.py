@@ -24,6 +24,10 @@ from typing import Any, cast
 
 import idna
 
+# Make the project root importable regardless of the current working directory.
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from routing.domains import (
     PublicSuffixes,
     exclusion_reason,
