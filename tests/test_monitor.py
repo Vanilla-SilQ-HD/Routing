@@ -55,6 +55,11 @@ class MonitorTests(unittest.TestCase):
         self.assertNotIn("<img src=x onerror=alert(1)>", report)
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", report)
         self.assertIn("&lt;b&gt;time&lt;/b&gt;", report)
+    def test_insecure_monitoring_url_is_rejected(self):
+        from monitor import request_json
+        with self.assertRaises(ValueError):
+            request_json("http://api.example/measurements")
+
     def test_empty_measurement_result_is_unknown(self):
         with patch("monitor.create_measurement", return_value={"id": "m1"}), \
                 patch("monitor.wait_for_measurement", return_value={"results": []}):

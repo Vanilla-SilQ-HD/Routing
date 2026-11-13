@@ -9,6 +9,7 @@ import logging
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, cast
@@ -28,13 +29,15 @@ def utc_now() -> str:
 
 
 def request_json(url: str, *, payload: dict[str, Any] | None = None, timeout: float = 30) -> Any:
+    if urllib.parse.urlsplit(url).scheme != "https":
+        raise ValueError("Monitoring API URL must use HTTPS")
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(url, data=data, headers={
         "User-Agent": USER_AGENT, "Accept": "application/json",
         "Content-Type": "application/json" if data else "application/x-www-form-urlencoded",
     }, method="POST" if data else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.build_opener().open(request, timeout=timeout) as response:
             return json.loads(response.read(4 * 1024 * 1024 + 1))
     except urllib.error.HTTPError as exc:
         detail = exc.read(2000).decode("utf-8", errors="replace")

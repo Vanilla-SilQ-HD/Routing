@@ -6,6 +6,7 @@ import logging
 import os
 import platform
 import tarfile
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -26,8 +27,10 @@ def main() -> None:
     if platform.machine().lower() not in {"amd64", "x86_64"}:
         raise SystemExit("Only the audited amd64 compiler archives are configured.")
     asset = lock["assets"][f"{system}-amd64"]
+    if urllib.parse.urlsplit(asset["url"]).scheme != "https":
+        raise SystemExit("Compiler URL must use HTTPS")
     request = urllib.request.Request(asset["url"], headers={"User-Agent": "selective-vpn-rules/1"})
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.build_opener().open(request, timeout=60) as response:
         if not response.url.startswith("https://"):
             raise SystemExit("Refusing non-HTTPS archive redirect")
         data = response.read(128 * 1024 * 1024 + 1)

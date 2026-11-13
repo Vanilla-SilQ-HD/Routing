@@ -98,7 +98,7 @@ def main() -> None:
             headers={"Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
                      "Accept": "application/vnd.github+json", "User-Agent": "Routing-Issue-Bot"},
             method="POST")
-        with urllib.request.urlopen(request, timeout=30):
+        with urllib.request.build_opener().open(request, timeout=30):
             pass
     logger.info(json.dumps(candidate, ensure_ascii=False))
 

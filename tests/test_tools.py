@@ -30,6 +30,14 @@ class FakeResponse:
         return False
 
 
+class FakeOpener:
+    def __init__(self, data):
+        self.data = data
+
+    def open(self, _request, timeout):
+        return FakeResponse(self.data)
+
+
 class ToolTests(unittest.TestCase):
     def make_archive(self, executable=b"compiler"):
         stream = io.BytesIO()
@@ -50,13 +58,13 @@ class ToolTests(unittest.TestCase):
             with patch.object(install_tools, "ROOT", root), \
                     patch("install_tools.platform.system", return_value="linux"), \
                     patch("install_tools.platform.machine", return_value="x86_64"), \
-                    patch("install_tools.urllib.request.urlopen", return_value=FakeResponse(data)):
+                    patch("install_tools.urllib.request.build_opener", return_value=FakeOpener(data)):
                 install_tools.main()
             self.assertEqual((root / ".tools/sing-box").read_bytes(), b"compiler")
             with patch.object(install_tools, "ROOT", root), \
                     patch("install_tools.platform.system", return_value="linux"), \
                     patch("install_tools.platform.machine", return_value="x86_64"), \
-                    patch("install_tools.urllib.request.urlopen", return_value=FakeResponse(data + b"corrupt")), self.assertRaises(SystemExit):
+                    patch("install_tools.urllib.request.build_opener", return_value=FakeOpener(data + b"corrupt")), self.assertRaises(SystemExit):
                 install_tools.main()
 
     def test_linux_rss_is_read_from_proc(self):
