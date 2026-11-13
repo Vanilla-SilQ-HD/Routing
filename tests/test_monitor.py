@@ -132,5 +132,61 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(len(result["history"]), 1)
 
 
+    def test_rotation_is_deterministic_per_seed(self):
+        from monitor import select_rotation_targets
+        domains = [f"domain{i}.example" for i in range(50)]
+        a = select_rotation_targets(domains, 5, "2026-11-13")
+        b = select_rotation_targets(domains, 5, "2026-11-13")
+        c = select_rotation_targets(domains, 5, "2026-11-14")
+        self.assertEqual(a, b)  # same seed -> same sample
+        self.assertEqual(len(a), 5)
+        self.assertTrue(set(a) <= set(domains))
+        self.assertNotEqual(a, c)  # different day -> different sample
+        self.assertEqual(select_rotation_targets([], 5, "x"), [])
+
+    def test_stale_candidates_track_consecutive_direct_answers(self):
+        from monitor import update_stale_candidates
+        previous: dict = {}
+        # Run 1: example.com works direct once.
+        results = [{"target": "example.com", "status": "works_direct"},
+                   {"target": "blocked.example", "status": "blocked_or_geo"}]
+        candidates = update_stale_candidates(previous, results, threshold=3)
+        self.assertEqual(candidates, [])
+        # Runs 2 and 3 keep answering direct; blocked.example never appears as direct.
+        update_stale_candidates(previous, results, threshold=3)
+        candidates = update_stale_candidates(previous, results, threshold=3)
+        self.assertEqual(candidates, [{"domain": "example.com", "consecutive_works_direct": 3}])
+        self.assertNotIn("blocked.example", previous["stale_streaks"])
+        # A non-direct answer resets the streak.
+        reset = [{"target": "example.com", "status": "down_or_error"}]
+        candidates = update_stale_candidates(previous, reset, threshold=3)
+        self.assertEqual(candidates, [])
+        self.assertNotIn("example.com", previous["stale_streaks"])
+
+    def test_load_compact_domains_parses_full_and_domain_lines(self):
+        from monitor import load_compact_domains
+
+        class FakeResponse:
+            def read(self, _limit):
+                return b"full:a.example\ndomain:b.example\n# comment\n\nfull:c.example\n"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                return FakeResponse()
+
+        with patch("urllib.request.build_opener", return_value=FakeOpener()):
+            self.assertEqual(load_compact_domains("https://example/core.txt"),
+                             ["a.example", "b.example", "c.example"])
+        # Network failure disables rotation without raising.
+        with patch("urllib.request.build_opener", side_effect=OSError("down")):
+            self.assertEqual(load_compact_domains("https://example/core.txt"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

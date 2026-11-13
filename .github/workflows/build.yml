@@ -324,6 +324,7 @@ jobs:
           path: |
             incoming/dist/monitoring.json
             incoming/dist/monitoring.html
+            incoming/dist/stale-candidates.json
           if-no-files-found: error
           retention-days: 2
 
@@ -364,6 +365,7 @@ jobs:
           cp incoming/dist/presets.user.json _site/presets.user.json
           cp incoming/dist/blocked-domains.srs _site/blocked-domains.srs
           cp incoming/dist/blocked-domains-core.srs _site/blocked-domains-core.srs
+          cp incoming/dist/blocked-domains-core.txt _site/blocked-domains-core.txt
           cp incoming/dist/blocked-domains-smart.srs _site/blocked-domains-smart.srs
           cp incoming/dist/blocked-services-ip.srs _site/blocked-services-ip.srs
           cp incoming/dist/blocked-registry-ip.srs _site/blocked-registry-ip.srs
@@ -372,6 +374,9 @@ jobs:
           if [ -f incoming/dist/monitoring.json ]; then
             cp incoming/dist/monitoring.json _site/monitoring.json
             cp incoming/dist/monitoring.html _site/monitoring.html
+            if [ -f incoming/dist/stale-candidates.json ]; then
+              cp incoming/dist/stale-candidates.json _site/stale-candidates.json
+            fi
           else
             echo '{"schema_version":1,"generated_at":null,"provider":"Globalping","vpn_measurement":"not_performed","automatic_route_changes":false,"history":[],"unavailable":true}' > _site/monitoring.json
             printf '<!doctype html><html lang="ru"><meta charset="utf-8"><title>Routing · Мониторинг</title><body style="background:#08111f;color:#e7f0fc;font:16px system-ui;max-width:800px;margin:60px auto;padding:0 20px"><h1>Мониторинг временно недоступен</h1><p>Внешняя проверка не выполнилась в этом запуске. Маршруты и наборы правил опубликованы штатно.</p><p><a style="color:#70b7ff" href="index.html">Routing Dashboard</a></p></body></html>' > _site/monitoring.html

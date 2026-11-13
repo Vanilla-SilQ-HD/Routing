@@ -17,5 +17,15 @@
     "discord.com",
     "instagram.com",
     "telegram.org"
-  ]
+  ],
+  "direct_targets": [
+    "ozon.ru",
+    "vk.com",
+    "yandex.ru"
+  ],
+  "rotation": {
+    "sample_size": 4,
+    "source_url": "https://vanilla-silq-hd.github.io/Routing/blocked-domains-core.txt",
+    "stale_threshold": 3
+  }
 }
