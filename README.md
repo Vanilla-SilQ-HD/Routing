@@ -139,7 +139,7 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 - Telegram и хотя бы один адрес из `blocked-registry-ip.srs` → `ваш VPN`;
 - IPv4 и IPv6 — отдельно.
 
-![Пример готовой конфигурации AWG Manager](docs/assets/awg-manager-example.svg)
+![Пример готовой конфигурации AWG Manager](docs/assets/awg-manager-example.png)
 
 Подробнее: [документация AWG Manager](https://awgm.hoaxisr.ru/guide/singbox/router/).
 
