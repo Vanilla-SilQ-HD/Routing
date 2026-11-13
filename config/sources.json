@@ -101,6 +101,53 @@
       "max_bytes": 4194304,
       "description": "Дополнительные геоограниченные сервисы; точные domain сохраняются точными",
       "caveat": "Upstream автоматически добавляет домены, но не гарантирует удаление ставших доступными. Это сведения источника, а не проверка доступности."
+    },
+    {
+      "id": "v2fly-greatfire",
+      "url": "https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/greatfire",
+      "format": "suffix-lines",
+      "min_entries": 10,
+      "max_bytes": 1048576,
+      "description": "GreatFire — мониторинг цензуры в Китае и других странах, включая заблокированные ресурсы",
+      "reference": "https://github.com/v2fly/domain-list-community",
+      "caveat": "Список ориентирован на китайскую цензуру, но содержит общие заблокированные ресурсы"
+    },
+    {
+      "id": "geo-aggregator-itdog-inside",
+      "url": "https://raw.githubusercontent.com/Ground-Zerro/Geo-Aggregator/main/source1/itDog-russia-inside.txt",
+      "format": "suffix-lines",
+      "min_entries": 500,
+      "max_bytes": 2097152,
+      "description": "Недоступные из России ресурсы от itDog (через Geo-Aggregator)",
+      "reference": "https://github.com/Ground-Zerro/Geo-Aggregator",
+      "caveat": "Агрегатор itdoginfo/allow-domains, дублирует основной источник itdog-inside"
+    },
+    {
+      "id": "geo-aggregator-social",
+      "url": "https://raw.githubusercontent.com/Ground-Zerro/Geo-Aggregator/main/source1/category-social-media.txt",
+      "format": "suffix-lines",
+      "min_entries": 500,
+      "max_bytes": 2097152,
+      "description": "Социальные сети и мессенджеры от Geo-Aggregator",
+      "reference": "https://github.com/Ground-Zerro/Geo-Aggregator"
+    },
+    {
+      "id": "geo-aggregator-media",
+      "url": "https://raw.githubusercontent.com/Ground-Zerro/Geo-Aggregator/main/source1/category-media.txt",
+      "format": "suffix-lines",
+      "min_entries": 200,
+      "max_bytes": 1048576,
+      "description": "Медиа и стриминговые сервисы от Geo-Aggregator",
+      "reference": "https://github.com/Ground-Zerro/Geo-Aggregator"
+    },
+    {
+      "id": "rockblack-telegram",
+      "url": "https://raw.githubusercontent.com/RockBlack-VPN/ip-address/main/Global/Telegram/telegram_domain",
+      "format": "suffix-lines",
+      "min_entries": 10,
+      "max_bytes": 1048576,
+      "description": "Домены Telegram от RockBlack-VPN",
+      "reference": "https://github.com/RockBlack-VPN/ip-address"
     }
   ],
   "core_excluded_sources": ["antifilter-full", "rkn"],

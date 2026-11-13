@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/routing-banner.svg" alt="Routing — недоступное через VPN, остальное напрямую" width="100%">
+  <img src="docs/assets/routing-banner.svg" alt="Routing — выборочная маршрутизация: заблокированные ресурсы через VPN, остальные напрямую" width="100%">
 </p>
 
 <p align="center">
@@ -12,13 +12,26 @@
   <img src="https://img.shields.io/badge/sing--box-1.14.4-546e7a" alt="sing-box 1.14.4">
 </p>
 
-Автообновляемые наборы для **sing-box** и **AWG Manager**: заблокированные и недоступные в России ресурсы — через VPN, остальной трафик — напрямую.
+Автообновляемые наборы для **sing-box** и **AWG Manager**: выборочная маршрутизация — заблокированные и недоступные в России ресурсы через VPN, остальной трафик напрямую.
 
 [Подключение к AWG Manager](#подключение-к-awg-manager) · [Готовый JSON](#готовый-json-для-sing-box) · [Состав наборов](#состав-наборов) · [Последний релиз](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest) · [Routing Dashboard](https://vanilla-silq-hd.github.io/Routing/) · [Мониторинг](https://vanilla-silq-hd.github.io/Routing/monitoring.html) · [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json)
 
 ## Быстрый старт
 
 Собирать проект не нужно: готовые наборы уже опубликованы и обновляются автоматически.
+
+### Прямые ссылки на наборы
+
+| Набор | URL для AWG Manager / sing-box |
+|-------|-------------------------------|
+| **Полная доменная база** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs` |
+| **Compact (без крупных реестров)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-core.srs` |
+| **Сети приложений (Telegram)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs` |
+| **Точные IP-адреса** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs` |
+| **Широкие CIDR (опционально)** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip-cidr.srs` |
+| **Direct-исключения** | `https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/routing-direct-exceptions.srs` |
+
+### Подключение за 4 шага
 
 1. Выберите профиль **Full** или **Compact** в [Catalog](https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/catalog.json).
 2. Подключите удалённые наборы по инструкции ниже и направьте их в свой VPN-outbound.
@@ -210,14 +223,27 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 
 ### Источники доменов
 
-- [Antifilter](https://antifilter.download/list/domains.lst) и [Antifilter community](https://community.antifilter.download/list/domains.lst);
-- [Re-filter](https://github.com/1andrevich/Re-filter-lists);
-- [itdog allow-domains — Russia/inside](https://github.com/itdoginfo/allow-domains);
+Проект объединяет **17 источников** для максимального покрытия:
+
+**Основные блок-листы:**
+- [Antifilter](https://antifilter.download/list/domains.lst) и [Antifilter community](https://community.antifilter.download/list/domains.lst) — полный список заблокированных в РФ;
+- [Re-filter](https://github.com/1andrevich/Re-filter-lists) — дополнительный источник RunetFreedom;
+- [itdog allow-domains — Russia/inside](https://github.com/itdoginfo/allow-domains) — недоступные из России ресурсы;
+- [hoaxisr/vernette — RKN](https://github.com/hoaxisr/rulesets) — реестр Роскомнадзора;
+- [unavailable-in-russia](https://github.com/hoaxisr/rulesets) — геоограниченные сервисы.
+
+**Агрегаторы и сообщества:**
+- [amatol/awgmanager-lists](https://github.com/amatol/awgmanager-lists) — кураторский агрегат OONI, itdog geoblock и Services, RockBlack;
+- [Ground-Zerro/Geo-Aggregator](https://github.com/Ground-Zerro/Geo-Aggregator) — агрегатор 1762 категорий с ежедневным обновлением:
+  - `itDog-russia-inside` — недоступные ресурсы;
+  - `category-social-media` — социальные сети;
+  - `category-media` — медиа и стриминг;
+- [v2fly/domain-list-community — GreatFire](https://github.com/v2fly/domain-list-community) — мониторинг цензуры;
+- [RockBlack-VPN — Telegram](https://github.com/RockBlack-VPN/ip-address) — домены мессенджера.
+
+**Специализированные сервисы:**
 - [itdog — отдельный Google AI](https://github.com/itdoginfo/allow-domains/blob/main/Services/google_ai.lst);
-- [amatol/awgmanager-lists](https://github.com/amatol/awgmanager-lists) — кураторский агрегат OONI, itdog geoblock и Services, RockBlack и community-списков;
-- [hoaxisr/vernette — RKN](https://github.com/hoaxisr/rulesets);
-- зависимости [Bungie, Kinopub, Gemini и TikTok](https://github.com/hoaxisr/rulesets);
-- [unavailable-in-russia](https://github.com/hoaxisr/rulesets).
+- зависимости [Bungie, Kinopub, Gemini и TikTok](https://github.com/hoaxisr/rulesets).
 
 Отдельные IP-источники: [ipresolve.lst](https://antifilter.download/list/ipresolve.lst), [subnet.lst](https://antifilter.download/list/subnet.lst), [community.lst](https://community.antifilter.download/list/community.lst) и [ipsum.lst](https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst).
 
