@@ -1,0 +1,18 @@
+{
+  "generated": "2026-11-14T18:29:14+00:00",
+  "sources": [
+    {
+      "id": "routing",
+      "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/{}",
+      "names": [
+        "blocked-domains",
+        "blocked-domains-core",
+        "blocked-domains-smart",
+        "blocked-services-ip",
+        "blocked-registry-ip",
+        "blocked-registry-ip-cidr",
+        "routing-direct-exceptions"
+      ]
+    }
+  ]
+}
