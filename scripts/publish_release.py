@@ -25,6 +25,8 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
 from routing.datasets import DATASET_NAMES, dataset_sizes
 from routing.datasets import DATASETS as DATASET_REGISTRY
 from routing.net import CredentialSafeRedirect
+from routing.util import file_sha256 as sha256
+from routing.util import json_bytes
 
 try:
     from .errors import RoutingError
@@ -62,15 +64,6 @@ PROJECT_TAG_PATTERNS = (
 
 def is_project_tag(tag: str) -> bool:
     return any(pattern.fullmatch(tag) for pattern in PROJECT_TAG_PATTERNS)
-
-
-def sha256(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
-def json_bytes(value: Any) -> bytes:
-    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
 def parse_checksums(text: str, expected: set[str]) -> dict[str, str]:

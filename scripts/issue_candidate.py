@@ -17,14 +17,12 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routing.domains import normalize_domain
+from routing.util import write_json
 
 try:
-    from .build import write_json
     from .logging_utils import configure_logging
 except ImportError:
     from logging_utils import configure_logging  # type: ignore[no-redef]
-
-    from build import write_json  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 

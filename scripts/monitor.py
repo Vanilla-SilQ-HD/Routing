@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import random
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -16,18 +17,18 @@ import urllib.request
 from pathlib import Path
 from typing import Any, cast
 
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from routing.util import utc_now
+
 try:
     from .logging_utils import configure_logging
 except ImportError:
     from logging_utils import configure_logging  # type: ignore[no-redef]
 
-ROOT = Path(__file__).resolve().parents[1]
 USER_AGENT = "Routing-Monitor/1 (public availability checks)"
 logger = logging.getLogger(__name__)
-
-
-def utc_now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
 def request_json(url: str, *, payload: dict[str, Any] | None = None, timeout: float = 30) -> Any:
@@ -256,7 +257,7 @@ def html_report(data: dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--config", default=str(ROOT / "config/monitoring.json"))
+    parser.add_argument("--config", default=str(Path(__file__).resolve().parents[1] / "config/monitoring.json"))
     parser.add_argument("--pages-url", default="https://vanilla-silq-hd.github.io/Routing/monitoring.json")
     parser.add_argument("--output", required=True)
     parser.add_argument("--html", required=True)

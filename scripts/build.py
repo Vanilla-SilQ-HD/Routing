@@ -30,8 +30,10 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
 
 from routing.datasets import DATASET_NAMES, PRESETS
 from routing.domains import PublicSuffixes, match_rule, normalize_domain, parents
+from routing.net import HTTPSRedirect
 from routing.pipeline import apply_policy, minimize_domains, parse_domains
 from routing.recipe import recipe_hashes
+from routing.util import file_sha256, read_json, utc_now, write_json
 
 try:
     from .errors import RoutingError
@@ -52,34 +54,6 @@ logger = logging.getLogger(__name__)
 
 class BuildError(RoutingError):
     pass
-
-
-def utc_now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def file_sha256(path: str | Path) -> str:
-    with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
-def read_json(path: str | Path) -> Any:
-    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
-
-
-def write_json(path: str | Path, value: Any) -> None:
-    Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
-        if urllib.parse.urlsplit(newurl).scheme != "https":
-            raise BuildError("Refusing an HTTP downgrade redirect")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 DEFAULT_NETWORK = {"timeout_seconds": 30, "total_timeout_seconds": 150,
