@@ -32,6 +32,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["idna>=3.10,<4"]
 
+[project.scripts]
+routing-build = "scripts.build:main"
+
 [tool.setuptools.packages.find]
 include = ["routing*", "scripts*"]
 

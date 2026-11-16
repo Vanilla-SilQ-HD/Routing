@@ -10,15 +10,10 @@ from typing import Any
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routing.datasets import DATASET_NAMES
+from routing.datasets import DATASET_NAMES, PRESETS
 
 EXPECTED_DATASETS = set(DATASET_NAMES)
-EXPECTED_PRESETS = {
-    "routing-full": {"routing", "routing-services", "routing-registry-ip"},
-    "routing-compact": {"routing-core", "routing-services", "routing-registry-ip"},
-    "routing-smart": {"routing-smart", "routing-services", "routing-registry-ip"},
-    "routing-wide-cidr": {"routing-registry-ip-cidr"},
-}
+EXPECTED_PRESETS = {preset.identifier: preset.tags for preset in PRESETS}
 
 
 class AWGOutputError(ValueError):
@@ -45,7 +40,7 @@ def validate_outputs(build_dir: Path) -> dict[str, Any]:
         rule_sets = engine.get("ruleSets", [])
         if engine.get("action") != "tunnel":
             raise AWGOutputError(f"Preset {preset['id']} must use the tunnel action")
-        if {item.get("tag") for item in rule_sets} != EXPECTED_PRESETS[preset["id"]]:
+        if {item.get("tag") for item in rule_sets} != set(EXPECTED_PRESETS[preset["id"]]):
             raise AWGOutputError(f"Preset {preset['id']} has an unexpected rule-set composition")
         if any(item.get("tag") == "routing-direct-exceptions" for item in rule_sets):
             raise AWGOutputError("Direct exceptions must not be routed to VPN")

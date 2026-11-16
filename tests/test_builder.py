@@ -8,70 +8,72 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import build
+from routing.domains import PublicSuffixes, exclusion_reason, match_rule, minimize, normalize_domain
 
 
 class DomainSemanticsTests(unittest.TestCase):
     def test_normalization_is_idna2008_and_preserves_labels(self):
-        self.assertEqual(build.normalize_domain(" Faß.DE. "), "xn--fa-hia.de")
-        self.assertEqual(build.normalize_domain("ПРИМЕР.РФ"), "xn--e1afmkfd.xn--p1ai")
-        self.assertEqual(build.normalize_domain("WWW.Example.com"), "www.example.com")
+        self.assertEqual(normalize_domain(" Faß.DE. "), "xn--fa-hia.de")
+        self.assertEqual(normalize_domain("ПРИМЕР.РФ"), "xn--e1afmkfd.xn--p1ai")
+        self.assertEqual(normalize_domain("WWW.Example.com"), "www.example.com")
 
     def test_urls_ips_invalid_wildcards_and_injection_are_rejected(self):
         for value in ["https://a.example", "1.1.1.1", "a.example/path", "a.example:443", "*.example", "-bad.example", "a..example", "a.example..", "a@example.com", "a\n.example", "<script>", ""]:
             with self.subTest(value=value), self.assertRaises(ValueError):
-                build.normalize_domain(value)
+                normalize_domain(value)
 
     def test_psl_private_wildcard_exception_and_unknown_single_label(self):
-        psl = build.PublicSuffixes("com\nco.uk\npages.dev\n*.ck\n!www.ck\n")
+        psl = PublicSuffixes("com\nco.uk\npages.dev\n*.ck\n!www.ck\n")
         for domain in ["com", "co.uk", "pages.dev", "a.ck", "unknown-tld"]:
             self.assertTrue(psl.is_public_suffix(domain), domain)
         for domain in ["service.pages.dev", "example.com", "www.ck", "a.www.ck", "a.b.ck"]:
             self.assertFalse(psl.is_public_suffix(domain), domain)
 
     def test_filtering_a_parent_preserves_explicit_blocked_child(self):
-        psl = build.PublicSuffixes("com\npages.dev\n")
+        psl = PublicSuffixes("com\npages.dev\n")
         shared = {"googleapis.com": "shared"}
         candidates = {"googleapis.com": 1, "generativelanguage.googleapis.com": 1, "pages.dev": 1, "blocked.pages.dev": 1}
-        kept = {name: mask for name, mask in candidates.items() if not build.exclusion_reason("domain_suffix", name, shared, psl)}
-        exact, suffix = build.minimize({}, kept)
-        self.assertTrue(build.match_rule("generativelanguage.googleapis.com", exact, suffix))
-        self.assertTrue(build.match_rule("child.blocked.pages.dev", exact, suffix))
-        self.assertFalse(build.match_rule("fonts.googleapis.com", exact, suffix))
-        self.assertFalse(build.match_rule("ordinary.pages.dev", exact, suffix))
+        kept = {name: mask for name, mask in candidates.items() if not exclusion_reason("domain_suffix", name, shared, psl)}
+        exact, suffix = minimize({}, kept)
+        self.assertTrue(match_rule("generativelanguage.googleapis.com", exact, suffix))
+        self.assertTrue(match_rule("child.blocked.pages.dev", exact, suffix))
+        self.assertFalse(match_rule("fonts.googleapis.com", exact, suffix))
+        self.assertFalse(match_rule("ordinary.pages.dev", exact, suffix))
 
     def test_exact_names_never_expand_to_children(self):
-        exact, suffix = build.minimize({"exact.example": 1, "child.suffix.example": 2}, {"suffix.example": 1, "child.suffix.example": 2})
+        exact, suffix = minimize({"exact.example": 1, "child.suffix.example": 2}, {"suffix.example": 1, "child.suffix.example": 2})
         self.assertEqual(exact, {"exact.example": 1})
-        self.assertTrue(build.match_rule("exact.example", exact, suffix))
-        self.assertFalse(build.match_rule("child.exact.example", exact, suffix))
-        self.assertTrue(build.match_rule("deep.child.suffix.example", exact, suffix))
-        self.assertFalse(build.match_rule("not-suffix.example", exact, suffix))
+        self.assertTrue(match_rule("exact.example", exact, suffix))
+        self.assertFalse(match_rule("child.exact.example", exact, suffix))
+        self.assertTrue(match_rule("deep.child.suffix.example", exact, suffix))
+        self.assertFalse(match_rule("not-suffix.example", exact, suffix))
 
     def test_private_wildcard_does_not_remove_individual_tenants(self):
-        psl = build.PublicSuffixes("com\n*.ck\n// ===BEGIN PRIVATE DOMAINS===\n*.eth.limo\n")
+        psl = PublicSuffixes("com\n*.ck\n// ===BEGIN PRIVATE DOMAINS===\n*.eth.limo\n")
         self.assertTrue(psl.is_broad_routing_suffix("eth.limo"))
         self.assertFalse(psl.is_broad_routing_suffix("blocked-tenant.eth.limo"))
         self.assertTrue(psl.is_broad_routing_suffix("a.ck"))
 
     def test_service_owned_psl_exceptions_only_preserve_existing_rules(self):
-        psl = build.PublicSuffixes("com\n// ===BEGIN PRIVATE DOMAINS===\nclaudeusercontent.com\nframe.claudeusercontent.com\npages.dev\n")
+        psl = PublicSuffixes("com\n// ===BEGIN PRIVATE DOMAINS===\nclaudeusercontent.com\nframe.claudeusercontent.com\npages.dev\n")
         service_owned = {"claudeusercontent.com"}
-        self.assertIsNone(build.exclusion_reason("domain_suffix", "claudeusercontent.com", {}, psl, service_owned))
-        self.assertIsNone(build.exclusion_reason("domain_suffix", "frame.claudeusercontent.com", {}, psl, service_owned))
-        self.assertIsNotNone(build.exclusion_reason("domain_suffix", "pages.dev", {}, psl, service_owned))
-        self.assertIsNotNone(build.exclusion_reason("domain_suffix", "claudeusercontent.com", {"claudeusercontent.com": "shared"}, psl, service_owned))
+        self.assertIsNone(exclusion_reason("domain_suffix", "claudeusercontent.com", {}, psl, service_owned))
+        self.assertIsNone(exclusion_reason("domain_suffix", "frame.claudeusercontent.com", {}, psl, service_owned))
+        self.assertIsNotNone(exclusion_reason("domain_suffix", "pages.dev", {}, psl, service_owned))
+        self.assertIsNotNone(exclusion_reason("domain_suffix", "claudeusercontent.com", {"claudeusercontent.com": "shared"}, psl, service_owned))
 
     def test_minimization_preserves_membership_for_generated_corpus(self):
         rng = random.Random(58136)
         domains = {".".join([rng.choice(["a", "b", "c", "d"]) for _ in range(rng.randint(1, 4))] + ["example"]) for _ in range(1000)}
         exact = {name: 1 for name in sorted(domains) if rng.random() < 0.4}
         suffix = {name: 2 for name in sorted(domains) if rng.random() < 0.3}
-        small_exact, small_suffix = build.minimize(exact, suffix)
+        small_exact, small_suffix = minimize(exact, suffix)
         probes = domains | {"x." + name for name in domains} | {"not" + name for name in domains}
         for name in probes:
-            self.assertEqual(bool(build.match_rule(name, exact, suffix)), bool(build.match_rule(name, small_exact, small_suffix)), name)
+            self.assertEqual(bool(match_rule(name, exact, suffix)), bool(match_rule(name, small_exact, small_suffix)), name)
 
 
 class InputFailureTests(unittest.TestCase):
@@ -181,7 +183,7 @@ class ManualAndDiffTests(unittest.TestCase):
     def test_manual_rules_require_reason_review_and_narrow_suffix(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "manual.json"
-            psl = build.PublicSuffixes("com\n")
+            psl = PublicSuffixes("com\n")
             build.write_json(path, {"schema_version": 1, "rules": [
                 {"kind": "domain_suffix", "domain": "Example.COM", "reason": "reviewed service", "review_after": "2027-01-01"}
             ]})
@@ -201,7 +203,7 @@ class ManualAndDiffTests(unittest.TestCase):
     def test_direct_ip_exceptions_are_exact_and_public(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "direct.json"
-            psl = build.PublicSuffixes("com\n")
+            psl = PublicSuffixes("com\n")
             build.write_json(path, {"schema_version": 1, "rules": [
                 {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "direct resolver", "review_after": "2027-01-01"}
             ]})
@@ -220,7 +222,7 @@ class ManualAndDiffTests(unittest.TestCase):
     def test_ip_is_rejected_for_vpn_and_expired_direct_rules_stop_build(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "manual.json"
-            psl = build.PublicSuffixes("com\n")
+            psl = PublicSuffixes("com\n")
             rule = {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "test", "review_after": "2027-01-01"}
             build.write_json(path, {"schema_version": 1, "rules": [rule]})
             with self.assertRaisesRegex(build.BuildError, "only for Direct"):
@@ -234,7 +236,7 @@ class ManualAndDiffTests(unittest.TestCase):
     def test_overdue_direct_rule_is_only_a_warning_in_non_strict_mode(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "manual.json"
-            psl = build.PublicSuffixes("com\n")
+            psl = PublicSuffixes("com\n")
             rule = {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "test", "review_after": "2027-01-01"}
             build.write_json(path, {"schema_version": 1, "rules": [rule]})
             warnings: list = []
@@ -354,7 +356,7 @@ class AWGPresetTests(unittest.TestCase):
 
 class SmartProfileTests(unittest.TestCase):
     def test_registrable_domain_uses_public_suffix(self):
-        psl = build.PublicSuffixes("com\nco.uk\n*.ck\n!www.ck\n")
+        psl = PublicSuffixes("com\nco.uk\n*.ck\n!www.ck\n")
         self.assertEqual(psl.registrable_domain("example.com"), "example.com")
         self.assertEqual(psl.registrable_domain("a.b.example.com"), "example.com")
         self.assertEqual(psl.registrable_domain("x.example.co.uk"), "example.co.uk")
@@ -369,7 +371,7 @@ class SmartProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "top.csv"
             path.write_text("1,Example.COM\n2,a.b.example.co.uk\nnot-a-domain\n3,\n", encoding="utf-8")
-            psl = build.PublicSuffixes("com\nco.uk\n")
+            psl = PublicSuffixes("com\nco.uk\n")
             popular = build.parse_popularity(path, psl, max_domains=100, min_entries=1)
             self.assertEqual(popular, {"example.com", "example.co.uk"})
 
@@ -378,7 +380,7 @@ class SmartProfileTests(unittest.TestCase):
             path = Path(temporary) / "top.csv"
             path.write_text("1,example.com\n", encoding="utf-8")
             with self.assertRaises(build.BuildError):
-                build.parse_popularity(path, build.PublicSuffixes("com\n"), max_domains=100, min_entries=500)
+                build.parse_popularity(path, PublicSuffixes("com\n"), max_domains=100, min_entries=500)
 
     def test_zip_member_is_extracted_and_hashed(self):
         import hashlib

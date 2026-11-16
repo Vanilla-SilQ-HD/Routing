@@ -28,14 +28,10 @@ import idna
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routing.domains import (
-    PublicSuffixes,
-    exclusion_reason,
-    match_rule,
-    minimize,
-    normalize_domain,
-    parents,
-)
+from routing.datasets import DATASET_NAMES, PRESETS
+from routing.domains import PublicSuffixes, match_rule, normalize_domain, parents
+from routing.pipeline import apply_policy, minimize_domains, parse_domains
+from routing.recipe import recipe_hashes
 
 try:
     from .errors import RoutingError
@@ -661,95 +657,32 @@ def build(args: Any) -> None:
     direct_exact, direct_suffix, direct_ip_rules, direct_records = read_manual_rules(
         root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True,
         strict_review=strict_review, review_warnings=review_warnings)
-    exact: dict[str, int] = {}
-    suffix: dict[str, int] = {}
-    exclusions: dict[tuple[str, str], dict[str, Any]] = {}
-    core_exact: dict[str, int] = {}
-    core_suffix: dict[str, int] = {}
-    core_excluded = set(sources_config.get("core_excluded_sources", []))
-    stats, total_conditions, skipped = [], 0, 0
-    domain_registry_ips = []
-    shared = {normalize_domain(name): reason for name, reason in policy["shared_roots"].items()}
-    service_owned = {normalize_domain(name) for name in policy.get("service_owned_suffixes", {})}
-    if shared.keys() & service_owned:
-        raise BuildError("A domain cannot be both shared infrastructure and a service-owned exception")
-    names: Any
-    for i, source in enumerate(sources):
-        source_ips: set[Any] = set()
-        source_exact, source_suffix, parsed = parse_source(
-            fetched[source["id"]][0], source, policy["validation"]["max_invalid_fraction"], source_ips)
-        for network in source_ips:
-            domain_registry_ips.append((network, 1 << i))
-        metadata = dict(fetched[source["id"]][1], **parsed, description=source["description"])
-        if "caveat" in source:
-            metadata["caveat"] = source["caveat"]
-        total_conditions += parsed["unique_conditions"]
-        rejected_here = 0
-        for kind, names, merged in (("domain", source_exact, exact), ("domain_suffix", source_suffix, suffix)):
-            for name in names:
-                reason = exclusion_reason(kind, name, shared, psl, service_owned)
-                if reason:
-                    key = (kind, name)
-                    record = exclusions.setdefault(key, {"kind": kind, "domain": name, "reason": reason, "sources": []})
-                    record["sources"].append(source["id"])
-                    rejected_here += 1
-                    continue
-                merged[name] = merged.get(name, 0) | (1 << i)
-        if source["id"] not in core_excluded:
-            for kind, names, merged in (("domain", source_exact, core_exact), ("domain_suffix", source_suffix, core_suffix)):
-                for name in names:
-                    if not exclusion_reason(kind, name, shared, psl, service_owned):
-                        merged[name] = merged.get(name, 0) | (1 << i)
-        metadata["filtered_conditions"] = rejected_here
-        stats.append(metadata)
-        skipped += rejected_here
-        logger.info(f"Parsed {source['id']}: {parsed['unique_conditions']:,} conditions, "
-              f"{parsed['ip_addresses']} exact IPs, {rejected_here} broad rules excluded")
-    manual_mask = 1 << len(sources)
-    for kind, names, merged in (("domain", manual_exact, exact), ("domain_suffix", manual_suffix, suffix)):
-        for name in names:
-            merged[name] = merged.get(name, 0) | manual_mask
-    for kind, names, merged in (("domain", manual_exact, core_exact), ("domain_suffix", manual_suffix, core_suffix)):
-        for name in names:
-            merged[name] = merged.get(name, 0) | manual_mask
-    total_conditions += len(manual_exact) + len(manual_suffix)
-    sources_with_manual = [*sources, {"id": "manual-vpn"}]
-    before_minimize = len(exact) + len(suffix)
-    original_exact, original_suffix = exact, suffix
-    exact, suffix = minimize(original_exact, original_suffix)
-    core_exact, core_suffix = minimize(core_exact, core_suffix)
-    if len(core_exact) + len(core_suffix) < 1000:
-        raise BuildError("Compact domain set is unexpectedly small")
-    # Smart = Compact plus every popular registrable domain from the Full set.
-    # Popularity never introduces a rule on its own; it only promotes rules that are
-    # already routed to VPN in Full. Compact stays a strict subset of Smart.
+    parsed_domains = parse_domains(sources, fetched, policy["validation"]["max_invalid_fraction"], parse_source)
+    try:
+        selected = apply_policy(parsed_domains, sources_config, policy, psl, manual_exact, manual_suffix)
+    except ValueError as exc:
+        raise BuildError(str(exc)) from exc
+    for item, metadata in zip(parsed_domains.sources, selected.stats):
+        logger.info("Parsed %s: %s conditions, %s exact IPs, %s broad rules excluded",
+                    item.source["id"], f"{metadata['unique_conditions']:,}", metadata["ip_addresses"],
+                    metadata["filtered_conditions"])
     popular = parse_popularity(fetched[popularity_source["id"]][0], psl,
                                max_domains=popularity_config["max_domains"],
                                min_entries=popularity_source["min_entries"])
-    smart_exact: dict[str, int] = dict(core_exact)
-    smart_suffix: dict[str, int] = dict(core_suffix)
-    for name, mask in original_exact.items():
-        if psl.registrable_domain(name) in popular:
-            smart_exact[name] = smart_exact.get(name, 0) | mask
-    for name, mask in original_suffix.items():
-        if psl.registrable_domain(name) in popular:
-            smart_suffix[name] = smart_suffix.get(name, 0) | mask
-    smart_exact, smart_suffix = minimize(smart_exact, smart_suffix)
-    # Guarantee: every condition routed to VPN by Compact is also covered by Smart.
-    for names in (core_exact, core_suffix):
-        if any(not match_rule(name, smart_exact, smart_suffix) for name in names):
-            raise BuildError("Smart set lost a Compact condition")
+    try:
+        domains = minimize_domains(selected, psl, popular, policy["validation"]["minimum_output_domains"], manual_suffix)
+    except ValueError as exc:
+        raise BuildError(str(exc)) from exc
+    exact, suffix = domains.exact, domains.suffix
+    core_exact, core_suffix = domains.core_exact, domains.core_suffix
+    smart_exact, smart_suffix = domains.smart_exact, domains.smart_suffix
+    original_exact, original_suffix = domains.original_exact, domains.original_suffix
+    count, before_minimize = domains.count, domains.before_minimize
+    stats, total_conditions, skipped = selected.stats, selected.total_conditions, selected.skipped
+    exclusions, domain_registry_ips, core_excluded = selected.exclusions, selected.registry_ips, selected.core_excluded
+    sources_with_manual = [*sources, {"id": "manual-vpn"}]
     logger.info("Smart set: %s conditions (Compact %s, popular Full rules promoted)",
                 len(smart_exact) + len(smart_suffix), len(core_exact) + len(core_suffix))
-    count = len(exact) + len(suffix)
-    if count < policy["validation"]["minimum_output_domains"]:
-        raise BuildError(f"Unexpectedly small final set: {count}")
-    for name in suffix:
-        if name not in manual_suffix and exclusion_reason("domain_suffix", name, shared, psl, service_owned):
-            raise BuildError("Broad rule survived filtering")
-    for names in (original_exact, original_suffix):
-        if any(not match_rule(name, exact, suffix) for name in names):
-            raise BuildError("Minimization lost an input condition")
     validation = validate_previous(previous, stats, count, policy, allow_large_change=getattr(args, "allow_large_change", False))
     if review_warnings:
         validation.setdefault("warnings", []).extend(review_warnings)
@@ -902,7 +835,6 @@ def build(args: Any) -> None:
         write_json(stage / "probes.json", probes)
         write_json(stage / "domain-changes.json", domain_diff)
         write_json(stage / "manual-rules.json", {"vpn": manual_records, "direct_exceptions": direct_records})
-        from routing.recipe import recipe_hashes
         config_hashes = recipe_hashes(root)
         source_bits = collections.Counter(mask for mask in original_exact.values())
         source_bits.update(original_suffix.values())
@@ -946,7 +878,6 @@ def build(args: Any) -> None:
         built_at = utc_now()
         repository = os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")
         release_base = f"https://github.com/{repository}/releases/latest/download/"
-        from routing.datasets import DATASET_NAMES
         catalog_names = list(DATASET_NAMES)
         write_json(stage / "catalog.json", {"generated": built_at, "sources": [
             {"id": "routing", "url": release_base + "{}", "names": catalog_names}
@@ -1009,30 +940,12 @@ def build(args: Any) -> None:
 
 
 def make_presets(release_base: str) -> dict[str, Any]:
-    rule_urls = {
-        "routing": "blocked-domains.srs",
-        "routing-core": "blocked-domains-core.srs",
-        "routing-smart": "blocked-domains-smart.srs",
-        "routing-services": "blocked-services-ip.srs",
-        "routing-registry-ip": "blocked-registry-ip.srs",
-        "routing-registry-ip-cidr": "blocked-registry-ip-cidr.srs",
-    }
-    specifications = [
-        ("routing-full", "Routing · Full", ["routing", "routing-services", "routing-registry-ip"],
-         "Полная доменная база и точные IP. Direct-исключения настройте отдельным приоритетным правилом."),
-        ("routing-compact", "Routing · Compact", ["routing-core", "routing-services", "routing-registry-ip"],
-         "Компактная доменная база без двух крупнейших реестров, сервисные сети и точные IP. Direct-исключения настраиваются отдельно."),
-        ("routing-smart", "Routing · Smart", ["routing-smart", "routing-services", "routing-registry-ip"],
-         "Compact плюс популярные домены из полного набора (Tranco top-1M): баланс покрытия и размера. Direct-исключения настраиваются отдельно."),
-        ("routing-wide-cidr", "Routing · Wide CIDR", ["routing-registry-ip-cidr"],
-         "Дополнительные широкие CIDR. Подключайте только после проверки покрытия."),
+    presets = [
+        {"id": preset.identifier, "name": preset.title, "iconSlug": "router", "category": "custom",
+         "notice": preset.notice,
+         "engines": {"singbox": {"ruleSets": preset.rule_sets(release_base), "action": "tunnel"}}}
+        for preset in PRESETS
     ]
-    presets = []
-    for preset_id, name, tags, notice in specifications:
-        presets.append({"id": preset_id, "name": name, "iconSlug": "router", "category": "custom",
-                        "notice": notice, "engines": {"singbox": {
-                            "ruleSets": [{"tag": tag, "url": release_base + rule_urls[tag]} for tag in tags],
-                            "action": "tunnel"}}})
     return {"presets": presets}
 
 
