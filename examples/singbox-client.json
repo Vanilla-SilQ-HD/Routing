@@ -12,20 +12,18 @@
         "detour": "vpn"
       },
       {
-        "type": "https",
-        "tag": "dns-direct",
-        "server": "1.1.1.1",
-        "detour": "direct"
+        "type": "local",
+        "tag": "dns-direct"
       }
     ],
     "rules": [
       {
-        "rule_set": ["routing-smart"],
-        "server": "dns-vpn"
-      },
-      {
         "rule_set": ["routing-direct-exceptions"],
         "server": "dns-direct"
+      },
+      {
+        "rule_set": ["routing-smart"],
+        "server": "dns-vpn"
       }
     ],
     "final": "dns-direct",
@@ -45,9 +43,10 @@
   "outbounds": [
     { "type": "direct", "tag": "direct" },
     {
-      "type": "selector",
+      "type": "socks",
       "tag": "vpn",
-      "outbounds": ["direct"]
+      "server": "127.0.0.1",
+      "server_port": 1080
     }
   ],
   "route": {

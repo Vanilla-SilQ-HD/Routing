@@ -145,7 +145,7 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 
 ## Готовый JSON для sing-box
 
-Это фрагмент существующего конфига. Теги `vpn` и `direct` должны совпадать с вашими outbound. URL постоянные и всегда указывают на последний опубликованный релиз.
+Для AWG Manager используйте фрагмент ниже: это часть существующего конфига, а не отдельный конфиг для запуска. Теги `vpn` и `direct` должны совпадать с вашими outbound. URL постоянные и всегда указывают на последний опубликованный релиз.
 
 <details>
 <summary>Показать JSON</summary>
@@ -210,7 +210,9 @@ https://vanilla-silq-hd.github.io/Routing/routing-direct-exceptions.srs
 
 </details>
 
-Если GitHub недоступен напрямую, замените `http_client.detour` на `vpn` у всех наборов. Свои приоритетные исключения размещайте перед VPN-правилом. Другие VPN-правила в конфиге могут изменить итоговый маршрут. Подробнее: [Remote Rule Set в sing-box](https://sing-box.sagernet.org/configuration/rule-set/).
+Для самостоятельного sing-box есть [пример роутера](examples/singbox-router.json) с Full и [пример клиента](examples/singbox-client.json) со Smart и TUN. Это **не** файлы для импорта в AWG Manager. В обоих `vpn` — только пример SOCKS-outbound: нужен действующий SOCKS-прокси на `127.0.0.1:1080`, действительно ведущий через VPN, либо замена outbound на ваше подключение. `sing-box check` проверяет конфигурацию, но не доступность VPN. В AWG Manager используйте его существующий VPN-outbound и правила выше.
+
+Совпавшие домены разрешаются через HTTPS DNS через `vpn`, остальные — локальным системным DNS напрямую; DNS-исключения имеют приоритет. TUN-клиент должен направлять запросы через этот sing-box: собственный DoH/DoT приложения может обойти его DNS-правила. Проверьте IPv4 и IPv6 отдельно. Если GitHub недоступен напрямую, замените `http_client.detour` на `vpn` у всех наборов и проверьте загрузку при холодном старте. Свои приоритетные исключения размещайте перед VPN-правилом. Другие VPN-правила в конфиге могут изменить итоговый маршрут. Подробнее: [Remote Rule Set в sing-box](https://sing-box.sagernet.org/configuration/rule-set/).
 
 ## Состав наборов
 

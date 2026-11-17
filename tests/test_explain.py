@@ -27,8 +27,8 @@ class ExplainTests(unittest.TestCase):
             "direct_exceptions": {"rules": [{"domain": "ok.ru", "reason": "available in RU", "review_after": "2027-01-01"}]},
         }), encoding="utf-8")
         write_rules(self.dir / "blocked-domains.json", domains=["exact.example"], suffixes=["blocked.example"])
-        write_rules(self.dir / "blocked-domains-core.json", domains=["exact.example"])
-        write_rules(self.dir / "blocked-domains-smart.json", domains=["exact.example"], suffixes=["blocked.example"])
+        write_rules(self.dir / "blocked-domains-core.json", domains=["exact.example", "ok.ru"])
+        write_rules(self.dir / "blocked-domains-smart.json", domains=["exact.example", "ok.ru"], suffixes=["blocked.example"])
         write_rules(self.dir / "routing-direct-exceptions.json", domains=["ok.ru"])
 
     def test_vpn_by_exact_rule(self):
@@ -52,11 +52,30 @@ class ExplainTests(unittest.TestCase):
         self.assertEqual(result["reason"], "direct-exception")
         self.assertEqual(result["exception"]["reason"], "available in RU")
         self.assertEqual(result["exception"]["review_after"], "2027-01-01")
+        self.assertEqual(result["compact"], "Direct")
+        self.assertEqual(result["smart"], "Direct")
+
+    def test_source_attribution_is_explicitly_unavailable(self):
+        result = explain(self.dir, "exact.example")
+        self.assertEqual(result["source_attribution"], "unavailable")
+
+    def test_source_attribution_from_probe(self):
+        (self.dir / "probes.json").write_text(json.dumps([
+            {"domain": "exact.example", "sources": ["example-source"]},
+        ]), encoding="utf-8")
+        result = explain(self.dir, "exact.example")
+        self.assertEqual(result["sources"], ["example-source"])
+        self.assertEqual(result["source_attribution"], "probe")
 
     def test_unrouted_domain_defaults_to_direct(self):
         result = explain(self.dir, "ordinary.example")
         self.assertEqual(result["decision"], "Direct")
         self.assertIn("no-rule-matches", result["reason"])
+
+    def test_missing_rule_set_is_an_error(self):
+        (self.dir / "blocked-domains.json").unlink()
+        with self.assertRaises(FileNotFoundError):
+            explain(self.dir, "ordinary.example")
 
     def test_idna_input_is_normalized(self):
         write_rules(self.dir / "blocked-domains.json", domains=["xn--e1afmkfd.xn--p1ai"])

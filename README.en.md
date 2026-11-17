@@ -33,6 +33,12 @@ Requires **sing-box 1.14+** and an existing VPN outbound.
 
 Ready-made presets are in `presets.user.json` and the AWG Manager Catalog; they only add VPN sets, so the Direct-exception rule must still be added separately with higher priority.
 
+## Standalone sing-box examples
+
+`examples/singbox-router.json` uses the Full domain set; `examples/singbox-client.json` uses Smart and includes a TUN inbound. These are standalone examples, **not** files to import into AWG Manager. Both require a running SOCKS proxy at `127.0.0.1:1080` that actually reaches your VPN, or replacement of the `vpn` outbound with your working VPN configuration. `sing-box check` only checks configuration validity, not VPN reachability. For AWG Manager, use the rules above and its existing VPN outbound.
+
+The matched domain set uses HTTPS DNS through `vpn`; exceptions and all other domains use the local system resolver directly. Remote rule sets download through `direct` by default; if GitHub is unavailable directly, change their `http_client.detour` to `vpn`. Review DNS behavior of clients using their own DoH/DoT and test IPv4 and IPv6 separately.
+
 ## Profiles: which one to choose
 
 - **Full** — maximum coverage; large (about 10 MB SRS, hundreds of MB RSS on weak routers).
