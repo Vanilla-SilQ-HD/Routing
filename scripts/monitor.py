@@ -153,11 +153,12 @@ def update_stale_candidates(previous: dict[str, Any], results: list[dict[str, An
     """Track domains that answer works_direct from RU probes for several runs in a
     row. These are only *candidates* for review: routes are never changed here."""
     streaks: dict[str, int] = dict(previous.get("stale_streaks", {}))
-    current = {item["target"] for item in results}
+    vpn_results = [item for item in results if item.get("expected") != "Direct"]
+    current = {item["target"] for item in vpn_results}
     for target in list(streaks):
         if target not in current:
             del streaks[target]
-    for item in results:
+    for item in vpn_results:
         target = item["target"]
         if item.get("status") == "works_direct":
             streaks[target] = streaks.get(target, 0) + 1

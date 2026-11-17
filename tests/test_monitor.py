@@ -157,6 +157,13 @@ class MonitorTests(unittest.TestCase):
         candidates = update_stale_candidates(previous, results, threshold=3)
         self.assertEqual(candidates, [{"domain": "example.com", "consecutive_works_direct": 3}])
         self.assertNotIn("blocked.example", previous["stale_streaks"])
+        # Direct controls are not candidates for removing VPN routes.
+        candidates = update_stale_candidates(previous, [
+            {"target": "example.com", "status": "works_direct"},
+            {"target": "ozon.ru", "status": "works_direct", "expected": "Direct"},
+        ], threshold=3)
+        self.assertEqual(candidates, [{"domain": "example.com", "consecutive_works_direct": 4}])
+        self.assertNotIn("ozon.ru", previous["stale_streaks"])
         # A non-direct answer resets the streak.
         reset = [{"target": "example.com", "status": "down_or_error"}]
         candidates = update_stale_candidates(previous, reset, threshold=3)
