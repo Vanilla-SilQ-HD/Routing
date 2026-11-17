@@ -1,58 +1,212 @@
 {
   "$schema": "https://json-schema.org/draft-2020-12/schema",
   "title": "Routing build manifest",
+  "description": "Рецепт, контрольные суммы и результаты последней сборки правил маршрутизации.",
   "type": "object",
-  "required": ["schema_version", "built_at", "offline_replay", "sources", "output", "validation", "configuration_sha256", "compiler", "environment", "scope", "core", "smart", "service_networks", "registry_ip", "registry_cidr", "direct_exceptions", "domain_diff"],
+  "required": [
+    "schema_version",
+    "built_at",
+    "offline_replay",
+    "sources",
+    "output",
+    "validation",
+    "configuration_sha256",
+    "compiler",
+    "environment",
+    "scope",
+    "core",
+    "smart",
+    "service_networks",
+    "registry_ip",
+    "registry_cidr",
+    "direct_exceptions",
+    "domain_diff"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "built_at": {"type": "string"},
-    "offline_replay": {"type": "boolean"},
-    "sources": {"type": "array", "minItems": 1},
-    "public_suffix_list": {"type": "object"},
+    "schema_version": {
+      "const": 1,
+      "description": "Версия формата манифеста."
+    },
+    "built_at": {
+      "type": "string",
+      "description": "Время сборки в UTC."
+    },
+    "offline_replay": {
+      "type": "boolean",
+      "description": "Сборка из проверенного кеша без сети."
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Источники данных и статистика их обработки."
+    },
+    "public_suffix_list": {
+      "type": "object",
+      "description": "Происхождение и статистика Public Suffix List."
+    },
     "output": {
       "type": "object",
-      "required": ["total_conditions", "exact", "suffix", "srs_bytes", "files"],
+      "description": "Основной Full-набор и хеши опубликованных файлов.",
+      "required": [
+        "total_conditions",
+        "exact",
+        "suffix",
+        "srs_bytes",
+        "files"
+      ],
       "properties": {
-        "total_conditions": {"type": "integer", "minimum": 1},
-        "exact": {"type": "integer", "minimum": 0},
-        "suffix": {"type": "integer", "minimum": 0},
-        "srs_bytes": {"type": "integer", "minimum": 1},
-        "files": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+        "total_conditions": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Общее число условий маршрутизации."
+        },
+        "exact": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Число точных доменных правил."
+        },
+        "suffix": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Число суффиксных доменных правил."
+        },
+        "srs_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Размер основного SRS в байтах."
+        },
+        "files": {
+          "type": "object",
+          "description": "Имена выходных файлов и их SHA-256.",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 соответствующего файла из этого же релиза."
+          }
+        }
       }
     },
     "validation": {
       "type": "object",
-      "required": ["baseline", "warnings"],
+      "description": "Сравнение с предыдущей одобренной сборкой.",
+      "required": [
+        "baseline",
+        "warnings"
+      ],
       "properties": {
-        "baseline": {"enum": ["first-build", "previous-successful-or-approved-manifest", "large-change-candidate"]},
-        "baseline_built_at": {"type": "string"},
-        "warnings": {"type": "array", "items": {"type": "string"}}
+        "baseline": {
+          "enum": [
+            "first-build",
+            "previous-successful-or-approved-manifest",
+            "large-change-candidate"
+          ],
+          "description": "Тип базы сравнения или кандидат на пересмотр крупного изменения."
+        },
+        "baseline_built_at": {
+          "type": "string",
+          "description": "Время сборки базы сравнения."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Предупреждения проверок покрытия."
+        }
       }
     },
-    "configuration_sha256": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
-    "compiler": {"type": "object"},
+    "configuration_sha256": {
+      "type": "object",
+      "description": "SHA-256 файлов рецепта сборки.",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$",
+        "description": "SHA-256 файла рецепта (config, scripts, sources)."
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "description": "Версия компилятора sing-box и результаты проверок SRS."
+    },
     "environment": {
       "type": "object",
-      "required": ["github_commit"],
+      "description": "Среда исполнения и коммит сборки.",
+      "required": [
+        "github_commit"
+      ],
       "properties": {
-        "python": {"type": "string"},
-        "idna": {"type": "string"},
-        "github_commit": {"type": ["string", "null"]},
-        "repository": {"type": "string"}
+        "python": {
+          "type": "string",
+          "description": "Версия Python."
+        },
+        "idna": {
+          "type": "string",
+          "description": "Версия библиотеки IDNA."
+        },
+        "github_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Git-коммит рецепта; null вне CI."
+        },
+        "repository": {
+          "type": "string",
+          "description": "Репозиторий сборки."
+        }
       }
     },
-    "scope": {"type": "object"},
-    "core": {"type": "object"},
-    "smart": {"type": "object"},
-    "service_networks": {"type": "object"},
-    "registry_ip": {"type": "object"},
-    "registry_cidr": {"type": "object"},
-    "direct_exceptions": {"type": "object"},
-    "domain_diff": {"type": "object"},
-    "domain_changes": {"type": "object"},
-    "counts": {"type": "object"},
-    "exact_intersections_before_minimization": {"type": "array"},
-    "manual_vpn": {"type": "object"},
-    "elapsed_seconds": {"type": "number"}
+    "scope": {
+      "type": "object",
+      "description": "Ограничения и область применения наборов."
+    },
+    "core": {
+      "type": "object",
+      "description": "Статистика и файлы профиля Compact."
+    },
+    "smart": {
+      "type": "object",
+      "description": "Статистика и файлы профиля Smart."
+    },
+    "service_networks": {
+      "type": "object",
+      "description": "Сети сервисов, включённые в VPN-набор."
+    },
+    "registry_ip": {
+      "type": "object",
+      "description": "Точечные IP-правила реестра блокировок."
+    },
+    "registry_cidr": {
+      "type": "object",
+      "description": "Широкие CIDR из реестра блокировок."
+    },
+    "direct_exceptions": {
+      "type": "object",
+      "description": "Исключения для прямого маршрута."
+    },
+    "domain_diff": {
+      "type": "object",
+      "description": "Изменения доменных правил по сравнению с базой."
+    },
+    "domain_changes": {
+      "type": "object",
+      "description": "Изменения фактического покрытия доменов."
+    },
+    "counts": {
+      "type": "object",
+      "description": "Промежуточные счётчики обработки."
+    },
+    "exact_intersections_before_minimization": {
+      "type": "array",
+      "description": "Пересечения точных правил до минимизации."
+    },
+    "manual_vpn": {
+      "type": "object",
+      "description": "Статистика ручных VPN-правил."
+    },
+    "elapsed_seconds": {
+      "type": "number",
+      "description": "Длительность сборки в секундах."
+    }
   }
 }

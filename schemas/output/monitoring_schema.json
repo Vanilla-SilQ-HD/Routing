@@ -1,46 +1,50 @@
 {
   "$schema": "https://json-schema.org/draft-2020-12/schema",
   "title": "Routing monitoring report",
+  "description": "Наблюдения о доступности ресурсов из внешних проб, без автоматической смены маршрутов.",
   "type": "object",
   "required": ["schema_version", "generated_at", "provider", "vpn_measurement", "automatic_route_changes", "history"],
   "properties": {
-    "schema_version": {"const": 1},
-    "generated_at": {"type": ["string", "null"]},
-    "provider": {"type": "string"},
-    "vpn_measurement": {"const": "not_performed"},
-    "automatic_route_changes": {"const": false},
-    "history_restored": {"type": "boolean"},
-    "unavailable": {"type": "boolean"},
+    "schema_version": {"const": 1, "description": "Версия формата отчёта."},
+    "generated_at": {"type": ["string", "null"], "description": "Время формирования отчёта; null, если измерение недоступно."},
+    "provider": {"type": "string", "description": "Сервис внешних проб доступности."},
+    "vpn_measurement": {"const": "not_performed", "description": "VPN-маршрут внешними пробами не проверяется."},
+    "automatic_route_changes": {"const": false, "description": "Наблюдения не изменяют правила маршрутизации автоматически."},
+    "history_restored": {"type": "boolean", "description": "Удалось ли восстановить историю предыдущих запусков."},
+    "unavailable": {"type": "boolean", "description": "Проверка не состоялась из-за недоступности сервиса проб."},
     "stale_candidates": {
       "type": "array",
+      "description": "Кандидаты на ручную проверку после последовательных успешных прямых проб.",
       "items": {
         "type": "object",
         "required": ["domain", "consecutive_works_direct"],
         "properties": {
-          "domain": {"type": "string"},
-          "consecutive_works_direct": {"type": "integer", "minimum": 1}
+          "domain": {"type": "string", "description": "Домен-кандидат на пересмотр."},
+          "consecutive_works_direct": {"type": "integer", "minimum": 1, "description": "Число подряд успешных прямых проверок."}
         }
       }
     },
     "history": {
       "type": "array",
+      "description": "История запусков мониторинга.",
       "items": {
         "type": "object",
         "required": ["generated_at", "results"],
         "properties": {
-          "generated_at": {"type": "string"},
-          "rotated_sample": {"type": "array", "items": {"type": "string"}},
+          "generated_at": {"type": "string", "description": "Время запуска проб."},
+          "rotated_sample": {"type": "array", "items": {"type": "string"}, "description": "Случайная выборка доменов этого запуска."},
           "results": {
             "type": "array",
+            "description": "Ответы проб по целям.",
             "items": {
               "type": "object",
               "required": ["target", "status"],
               "properties": {
-                "target": {"type": "string"},
-                "status": {"enum": ["works_direct", "blocked_or_geo", "down_or_error", "unknown"]},
-                "http_status": {"type": ["integer", "null"]},
-                "expected": {"type": "string"},
-                "error": {"type": ["string", "null"]}
+                "target": {"type": "string", "description": "Проверяемый ресурс."},
+                "status": {"enum": ["works_direct", "blocked_or_geo", "down_or_error", "unknown"], "description": "Классификация результата прямой проверки."},
+                "http_status": {"type": ["integer", "null"], "description": "Полученный HTTP-код, если он известен."},
+                "expected": {"type": "string", "description": "Ожидаемый маршрут контрольной цели."},
+                "error": {"type": ["string", "null"], "description": "Сообщение об ошибке пробы, если оно есть."}
               }
             }
           }

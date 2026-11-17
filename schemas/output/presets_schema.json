@@ -1,41 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft-2020-12/schema",
   "title": "AWG Manager user presets",
+  "description": "Готовые пресеты маршрутизации для импорта в AWG Manager.",
   "type": "object",
   "required": ["presets"],
   "additionalProperties": false,
   "properties": {
     "presets": {
       "type": "array",
+      "description": "Список готовых профилей для VPN-маршрута.",
       "minItems": 1,
       "items": {
         "type": "object",
         "required": ["id", "name", "engines"],
         "properties": {
-          "id": {"type": "string"},
-          "name": {"type": "string"},
-          "iconSlug": {"type": "string"},
-          "category": {"type": "string"},
-          "notice": {"type": "string"},
+          "id": {"type": "string", "description": "Уникальный идентификатор пресета."},
+          "name": {"type": "string", "description": "Отображаемое имя пресета."},
+          "iconSlug": {"type": "string", "description": "Идентификатор иконки для интерфейса."},
+          "category": {"type": "string", "description": "Категория пресета в интерфейсе."},
+          "notice": {"type": "string", "description": "Подсказка по применению пресета."},
           "engines": {
             "type": "object",
+            "description": "Настройки пресета по движкам маршрутизации.",
             "required": ["singbox"],
             "properties": {
               "singbox": {
                 "type": "object",
+                "description": "Правила пресета для sing-box.",
                 "required": ["ruleSets", "action"],
                 "properties": {
-                  "action": {"const": "tunnel"},
+                  "action": {"const": "tunnel", "description": "Направлять совпавший трафик в туннель."},
                   "ruleSets": {
                     "type": "array",
+                    "description": "SRS-наборы, составляющие пресет.",
                     "minItems": 1,
                     "items": {
                       "type": "object",
                       "required": ["tag", "url"],
                       "additionalProperties": false,
                       "properties": {
-                        "tag": {"type": "string"},
-                        "url": {"type": "string", "pattern": "^https://.*\\.srs$"}
+                        "tag": {"type": "string", "description": "Имя набора правил в конфигурации sing-box."},
+                        "url": {"type": "string", "pattern": "^https://.*\\.srs$", "description": "HTTPS-адрес бинарного SRS-набора."}
                       }
                     }
                   }

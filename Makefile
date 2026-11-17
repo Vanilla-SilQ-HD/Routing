@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck security test coverage build validate clean help
+.PHONY: install lint typecheck security test coverage build validate docs clean help
 
 help:
 	@echo "Available targets:"
@@ -10,6 +10,7 @@ help:
 	@echo "  coverage   - Run tests with coverage report (min 75%)"
 	@echo "  build      - Run offline build to dist/"
 	@echo "  validate   - Validate configs and output artifacts"
+	@echo "  docs       - Regenerate the format reference in docs/DATA_FORMATS.md"
 	@echo "  clean      - Remove build artifacts and coverage data"
 	@echo ""
 	@echo "Example: make install lint test build"
@@ -40,6 +41,9 @@ build:
 validate:
 	python scripts/validate_config.py
 	python scripts/validate_outputs.py dist
+
+docs:
+	python scripts/gen_docs.py
 
 clean:
 	python -m coverage erase

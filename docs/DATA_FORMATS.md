@@ -47,58 +47,142 @@
 
 Машинное описание сборки. Проверяется по `schemas/output/manifest_schema.json`.
 
-Ключевые поля:
-
-- `schema_version` — всегда `1`.
-- `built_at` — ISO-время сборки (единое для всего релиза).
-- `offline_replay` — `true`, если сборка выполнена только из проверенного кеша без сети.
-- `sources` — список источников с числом условий, IP, отфильтрованных записей и SHA-256.
-- `public_suffix_list` — источник PSL и число правил.
-- `output` — итоговый набор: `total_conditions`, `exact`, `suffix`, `srs_bytes`, `files` (имя → SHA-256).
-- `core`, `smart` — компактный и Smart профили с собственными `output` и `compiler`.
-- `service_networks`, `registry_ip`, `registry_cidr`, `direct_exceptions` — соответствующие наборы с `output`, `validation`, `compiler`.
-- `domain_diff`, `domain_changes` — семантический diff покрытия.
-- `configuration_sha256` — хеши всех файлов рецепта (конфиги, скрипты, схемы, workflow).
-- `compiler` — версия sing-box, `source_format_version`, результаты `roundtrip` и `sing_box_check`.
-- `environment` — версия Python, idna, коммит, репозиторий.
-- `validation` — `baseline` (`first-build`, `previous-successful-or-approved-manifest`, `large-change-candidate`) и `warnings`.
-- `scope` — декларация области сборки (без личных правил, без доступа к роутеру и т.д.).
+Поля `sources` (число условий, IP, отфильтрованные записи, SHA-256), `public_suffix_list`,
+`output` (`total_conditions`, `exact`, `suffix`, `srs_bytes`, `files`), профили `core` и `smart`,
+`compiler` (версия sing-box, `roundtrip`, `sing_box_check`), `validation` (база сравнения и
+предупреждения), `scope` и `configuration_sha256` описаны в справочнике полей (раздел 8).
 
 ## 4. catalog.json
 
 Каталог для AWG Manager. Схема: `schemas/output/catalog_schema.json`.
-
-```json
-{
-  "generated": "2026-11-13T00:00:00+00:00",
-  "sources": [
-    { "id": "routing", "url": "https://github.com/.../releases/latest/download/{}", "names": ["blocked-domains", "..."] }
-  ]
-}
-```
-
-`names` — полный список наборов (см. `routing/datasets.py`).
+`names` — полный список наборов из `routing/datasets.py`; URL-шаблон содержит `{}`,
+который заменяется именем набора.
 
 ## 5. presets.user.json
 
 Готовые пресеты AWG Manager. Схема: `schemas/output/presets_schema.json`.
-
-Каждый пресет: `id`, `name`, `iconSlug`, `category`, `notice`, `engines.singbox` с `ruleSets` (массив `{tag, url}`) и `action: "tunnel"`. Direct-исключения никогда не включаются в VPN-пресеты.
+Direct-исключения никогда не включаются в VPN-пресеты: `routing-direct-exceptions`
+подключается в конфигурации отдельным правилом с `action: "route"` до правила туннеля.
 
 ## 6. monitoring.json
 
 Внешняя проверка доступности через Globalping. Схема: `schemas/output/monitoring_schema.json`.
-
-- `history` — массив запусков: `generated_at`, `results` (по целям), `rotated_sample`.
-- Каждый результат: `target`, `status` (`works_direct`, `blocked_or_geo`, `down_or_error`, `unknown`), `http_status`, `error`.
-- `stale_candidates` — домены, которые несколько запусков подряд отвечают `works_direct` из RU (кандидаты на ручной пересмотр).
-- `history_restored` — `false`, если прошлую историю не удалось загрузить (она не перезаписывается).
-- `automatic_route_changes` — всегда `false`.
-- `vpn_measurement` — всегда `not_performed`.
-
-Сопутствующий `stale-candidates.json` содержит только список кандидатов на пересмотр.
+VPN-маршрут внешними пробами не проверяется (`vpn_measurement: "not_performed"`), правила
+по наблюдениям не меняются (`automatic_route_changes: false`). Сопутствующий
+`stale-candidates.json` содержит только список кандидатов на ручной пересмотр.
 
 ## 7. domain-changes.json
 
 Семантический diff покрытия между текущей и предыдущей сборкой: `baseline`, `by_kind` (добавленные/удалённые условия по типам), `effective_added`, `effective_removed` и выборки `*_sample`. Позволяет отличить минимизацию от реальной потери покрытия.
+
+## 8. Справочник полей
+
+Блок ниже генерируется из JSON-схем командой `python scripts/gen_docs.py`; CI проверяет
+актуальность через `make docs-check`. Описания полей берутся из схем, поэтому формат
+документации совпадает с форматом валидации.
+
+<!-- BEGIN GENERATED:schemas -->
+
+### `manifest.json`
+
+Рецепт, контрольные суммы и результаты последней сборки правил маршрутизации.
+
+| Поле | Тип | Описание |
+| --- | --- | --- |
+| `schema_version` | const `1` | Версия формата манифеста. |
+| `built_at` | string | Время сборки в UTC. |
+| `offline_replay` | boolean | Сборка из проверенного кеша без сети. |
+| `sources` | array<any> | Источники данных и статистика их обработки. |
+| `public_suffix_list` | object | Происхождение и статистика Public Suffix List. |
+| `output` | object | Основной Full-набор и хеши опубликованных файлов. |
+| `output.total_conditions` | integer | Общее число условий маршрутизации. |
+| `output.exact` | integer | Число точных доменных правил. |
+| `output.suffix` | integer | Число суффиксных доменных правил. |
+| `output.srs_bytes` | integer | Размер основного SRS в байтах. |
+| `output.files` | object<string, string> | Имена выходных файлов и их SHA-256. |
+| `output.files.<key>` | string | SHA-256 соответствующего файла из этого же релиза. |
+| `validation` | object | Сравнение с предыдущей одобренной сборкой. |
+| `validation.baseline` | enum `first-build` / `previous-successful-or-approved-manifest` / `large-change-candidate` | Тип базы сравнения или кандидат на пересмотр крупного изменения. |
+| `validation.baseline_built_at` | string | Время сборки базы сравнения. |
+| `validation.warnings` | array<string> | Предупреждения проверок покрытия. |
+| `configuration_sha256` | object<string, string> | SHA-256 файлов рецепта сборки. |
+| `configuration_sha256.<key>` | string | SHA-256 файла рецепта (config, scripts, sources). |
+| `compiler` | object | Версия компилятора sing-box и результаты проверок SRS. |
+| `environment` | object | Среда исполнения и коммит сборки. |
+| `environment.python` | string | Версия Python. |
+| `environment.idna` | string | Версия библиотеки IDNA. |
+| `environment.github_commit` | string / null | Git-коммит рецепта; null вне CI. |
+| `environment.repository` | string | Репозиторий сборки. |
+| `scope` | object | Ограничения и область применения наборов. |
+| `core` | object | Статистика и файлы профиля Compact. |
+| `smart` | object | Статистика и файлы профиля Smart. |
+| `service_networks` | object | Сети сервисов, включённые в VPN-набор. |
+| `registry_ip` | object | Точечные IP-правила реестра блокировок. |
+| `registry_cidr` | object | Широкие CIDR из реестра блокировок. |
+| `direct_exceptions` | object | Исключения для прямого маршрута. |
+| `domain_diff` | object | Изменения доменных правил по сравнению с базой. |
+| `domain_changes` | object | Изменения фактического покрытия доменов. |
+| `counts` | object | Промежуточные счётчики обработки. |
+| `exact_intersections_before_minimization` | array<any> | Пересечения точных правил до минимизации. |
+| `manual_vpn` | object | Статистика ручных VPN-правил. |
+| `elapsed_seconds` | number | Длительность сборки в секундах. |
+
+### `catalog.json`
+
+Каталог наборов правил для импорта в AWG Manager.
+
+| Поле | Тип | Описание |
+| --- | --- | --- |
+| `generated` | string | Время генерации каталога. |
+| `sources` | array<object> | Единственный источник набора правил Routing. |
+| `sources[].id` | const `"routing"` | Идентификатор источника. |
+| `sources[].url` | string | HTTPS-шаблон URL релиза: {} заменяется именем набора. |
+| `sources[].names` | array<string> | Доступные имена наборов из routing/datasets.py. |
+
+### `presets.user.json`
+
+Готовые пресеты маршрутизации для импорта в AWG Manager.
+
+| Поле | Тип | Описание |
+| --- | --- | --- |
+| `presets` | array<object> | Список готовых профилей для VPN-маршрута. |
+| `presets[].id` | string | Уникальный идентификатор пресета. |
+| `presets[].name` | string | Отображаемое имя пресета. |
+| `presets[].iconSlug` | string | Идентификатор иконки для интерфейса. |
+| `presets[].category` | string | Категория пресета в интерфейсе. |
+| `presets[].notice` | string | Подсказка по применению пресета. |
+| `presets[].engines` | object | Настройки пресета по движкам маршрутизации. |
+| `presets[].engines.singbox` | object | Правила пресета для sing-box. |
+| `presets[].engines.singbox.action` | const `"tunnel"` | Направлять совпавший трафик в туннель. |
+| `presets[].engines.singbox.ruleSets` | array<object> | SRS-наборы, составляющие пресет. |
+| `presets[].engines.singbox.ruleSets[].tag` | string | Имя набора правил в конфигурации sing-box. |
+| `presets[].engines.singbox.ruleSets[].url` | string | HTTPS-адрес бинарного SRS-набора. |
+
+### `monitoring.json`
+
+Наблюдения о доступности ресурсов из внешних проб, без автоматической смены маршрутов.
+
+| Поле | Тип | Описание |
+| --- | --- | --- |
+| `schema_version` | const `1` | Версия формата отчёта. |
+| `generated_at` | string / null | Время формирования отчёта; null, если измерение недоступно. |
+| `provider` | string | Сервис внешних проб доступности. |
+| `vpn_measurement` | const `"not_performed"` | VPN-маршрут внешними пробами не проверяется. |
+| `automatic_route_changes` | const `false` | Наблюдения не изменяют правила маршрутизации автоматически. |
+| `history_restored` | boolean | Удалось ли восстановить историю предыдущих запусков. |
+| `unavailable` | boolean | Проверка не состоялась из-за недоступности сервиса проб. |
+| `stale_candidates` | array<object> | Кандидаты на ручную проверку после последовательных успешных прямых проб. |
+| `stale_candidates[].domain` | string | Домен-кандидат на пересмотр. |
+| `stale_candidates[].consecutive_works_direct` | integer | Число подряд успешных прямых проверок. |
+| `history` | array<object> | История запусков мониторинга. |
+| `history[].generated_at` | string | Время запуска проб. |
+| `history[].rotated_sample` | array<string> | Случайная выборка доменов этого запуска. |
+| `history[].results` | array<object> | Ответы проб по целям. |
+| `history[].results[].target` | string | Проверяемый ресурс. |
+| `history[].results[].status` | enum `works_direct` / `blocked_or_geo` / `down_or_error` / `unknown` | Классификация результата прямой проверки. |
+| `history[].results[].http_status` | integer / null | Полученный HTTP-код, если он известен. |
+| `history[].results[].expected` | string | Ожидаемый маршрут контрольной цели. |
+| `history[].results[].error` | string / null | Сообщение об ошибке пробы, если оно есть. |
+
+<!-- END GENERATED:schemas -->
 

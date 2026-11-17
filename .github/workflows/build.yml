@@ -74,6 +74,8 @@ jobs:
         run: python -m mypy
       - name: Validate configuration schemas
         run: python scripts/validate_config.py
+      - name: Check generated format reference
+        run: python scripts/gen_docs.py --check
       - name: Security lint
         run: python -m bandit -q -r scripts --severity-level medium
       - name: Install pinned compiler for integration tests
