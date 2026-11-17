@@ -1,4 +1,5 @@
 """Build domain and reviewed service-network VPN rule sets. No router access."""
+
 from __future__ import annotations
 
 import argparse
@@ -56,8 +57,7 @@ class BuildError(RoutingError):
     pass
 
 
-DEFAULT_NETWORK = {"timeout_seconds": 30, "total_timeout_seconds": 150,
-                   "retries": 3, "backoff_base": 1.0, "backoff_max": 30.0, "max_workers": 3}
+DEFAULT_NETWORK = {"timeout_seconds": 30, "total_timeout_seconds": 150, "retries": 3, "backoff_base": 1.0, "backoff_max": 30.0, "max_workers": 3}
 
 
 def _cached_metadata(target: Path, metadata_path: Path, source: dict[str, Any]) -> dict[str, Any] | None:
@@ -74,7 +74,7 @@ def _cached_metadata(target: Path, metadata_path: Path, source: dict[str, Any]) 
 
 
 def _retry_delay(attempt: int, network: dict[str, Any]) -> float:
-    base = float(network["backoff_base"]) * (2 ** attempt)
+    base = float(network["backoff_base"]) * (2**attempt)
     capped: float = min(float(network["backoff_max"]), base)
     return capped * (0.5 + random.random() / 2)
 
@@ -155,10 +155,15 @@ def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = Fals
                 if not size:
                     raise BuildError(f"Empty source: {source['id']}")
                 metadata = {
-                    "id": source["id"], "url": source["url"], "effective_url": response.url,
-                    "fetched_at": utc_now(), "bytes": size, "sha256": digest.hexdigest(),
+                    "id": source["id"],
+                    "url": source["url"],
+                    "effective_url": response.url,
+                    "fetched_at": utc_now(),
+                    "bytes": size,
+                    "sha256": digest.hexdigest(),
                     "last_modified": response.headers.get("Last-Modified"),
-                    "etag": response.headers.get("ETag"), "not_modified": False,
+                    "etag": response.headers.get("ETag"),
+                    "not_modified": False,
                 }
             if source.get("archive"):
                 # The .data file always holds the extracted text; the raw archive is kept
@@ -227,7 +232,9 @@ def parse_popularity(path: str | Path, psl: PublicSuffixes, *, max_domains: int,
     return popular
 
 
-def parse_source(path: str | Path, source: dict[str, Any], max_invalid_fraction: float, ip_networks: set[Any] | None = None) -> tuple[set[str], set[str], dict[str, Any]]:
+def parse_source(
+    path: str | Path, source: dict[str, Any], max_invalid_fraction: float, ip_networks: set[Any] | None = None
+) -> tuple[set[str], set[str], dict[str, Any]]:
     exact: set[str] = set()
     suffix: set[str] = set()
     source_ips: set[Any] = set()
@@ -298,16 +305,32 @@ def parse_source(path: str | Path, source: dict[str, Any], max_invalid_fraction:
         raise BuildError(f"Too many invalid records in {source['id']}: {invalid}/{records}; examples: {samples[:3]}")
     if ip_networks is not None:
         ip_networks.update(source_ips)
-    return exact, suffix, {
-        "unique_conditions": count, "exact": len(exact), "suffix": len(suffix),
-        "records": records, "invalid": invalid, "invalid_samples": samples,
-        "invalid_by_reason": dict(sorted(invalid_reasons.items())),
-        "ip_records": ip_records, "ip_addresses": len(source_ips),
-        "duplicate_records": records - invalid - ip_records - count,
-    }
+    return (
+        exact,
+        suffix,
+        {
+            "unique_conditions": count,
+            "exact": len(exact),
+            "suffix": len(suffix),
+            "records": records,
+            "invalid": invalid,
+            "invalid_samples": samples,
+            "invalid_by_reason": dict(sorted(invalid_reasons.items())),
+            "ip_records": ip_records,
+            "ip_addresses": len(source_ips),
+            "duplicate_records": records - invalid - ip_records - count,
+        },
+    )
 
 
-def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any]], count: int, policy: dict[str, Any], now: dt.datetime | None = None, allow_large_change: bool = False) -> dict[str, Any]:
+def validate_previous(
+    previous: dict[str, Any] | None,
+    stats: list[dict[str, Any]],
+    count: int,
+    policy: dict[str, Any],
+    now: dt.datetime | None = None,
+    allow_large_change: bool = False,
+) -> dict[str, Any]:
     if previous is None:
         return {"baseline": "first-build", "warnings": ["First build has no previous published version to compare."]}
     if previous.get("schema_version") != 1:
@@ -338,12 +361,24 @@ def validate_previous(previous: dict[str, Any] | None, stats: list[dict[str, Any
             raise BuildError(f"Unexpected output size change: {before} -> {count}")
         # A large growth is staged as a candidate pre-release instead of failing, so a
         # maintainer can review the diff and promote it explicitly. Never becomes Latest.
-        return {"baseline": "large-change-candidate", "baseline_built_at": previous["built_at"],
-                "warnings": [f"Large coverage growth staged for review: {before} -> {count}"]}
+        return {
+            "baseline": "large-change-candidate",
+            "baseline_built_at": previous["built_at"],
+            "warnings": [f"Large coverage growth staged for review: {before} -> {count}"],
+        }
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
 
 
-def read_manual_rules(path: str | Path, psl: PublicSuffixes, *, require_review: bool = False, allow_ip: bool = False, now: dt.date | None = None, strict_review: bool = True, review_warnings: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], list[Any], list[dict[str, Any]]]:
+def read_manual_rules(
+    path: str | Path,
+    psl: PublicSuffixes,
+    *,
+    require_review: bool = False,
+    allow_ip: bool = False,
+    now: dt.date | None = None,
+    strict_review: bool = True,
+    review_warnings: list[str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], list[Any], list[dict[str, Any]]]:
     path = Path(path)
     data = read_json(path)
     if data.get("schema_version") != 1 or not isinstance(data.get("rules"), list):
@@ -356,8 +391,7 @@ def read_manual_rules(path: str | Path, psl: PublicSuffixes, *, require_review: 
         if not isinstance(item, dict) or set(item) - {"kind", "domain", "reason", "review_after"}:
             raise BuildError(f"Unexpected manual rule fields in {path.name}")
         kind = item.get("kind")
-        if (kind not in {"domain", "domain_suffix", "ip_cidr"} or not isinstance(item.get("reason"), str)
-                or not item["reason"].strip()):
+        if kind not in {"domain", "domain_suffix", "ip_cidr"} or not isinstance(item.get("reason"), str) or not item["reason"].strip():
             raise BuildError(f"Manual rule kind and reason are required in {path.name}")
         if require_review:
             try:
@@ -407,7 +441,15 @@ def domain_groups(data: dict[str, Any]) -> dict[str, set[str]]:
     return groups
 
 
-def make_domain_diff(previous_rules: dict[str, Any] | None, exact: dict[str, int], suffix: dict[str, int], original_exact: dict[str, int], original_suffix: dict[str, int], sources: list[dict[str, Any]], limit: int = 1000) -> dict[str, Any]:
+def make_domain_diff(
+    previous_rules: dict[str, Any] | None,
+    exact: dict[str, int],
+    suffix: dict[str, int],
+    original_exact: dict[str, int],
+    original_suffix: dict[str, int],
+    sources: list[dict[str, Any]],
+    limit: int = 1000,
+) -> dict[str, Any]:
     current: dict[str, set[str]] = {"domain": set(exact), "domain_suffix": set(suffix)}
     previous: dict[str, set[str]]
     if previous_rules is None:
@@ -421,8 +463,10 @@ def make_domain_diff(previous_rules: dict[str, Any] | None, exact: dict[str, int
         added = sorted(current[kind] - previous[kind])
         removed = sorted(previous[kind] - current[kind])
         changes["by_kind"][kind] = {
-            "added": len(added), "removed": len(removed),
-            "added_sample": added[:limit], "removed_sample": removed[:limit],
+            "added": len(added),
+            "removed": len(removed),
+            "added_sample": added[:limit],
+            "removed_sample": removed[:limit],
         }
     added_names = set().union(*(set(current[kind]) - set(previous[kind]) for kind in current))
     masks: collections.Counter[int] = collections.Counter()
@@ -432,8 +476,7 @@ def make_domain_diff(previous_rules: dict[str, Any] | None, exact: dict[str, int
             mask |= original_suffix.get(parent, 0)
         masks[mask] += 1
     changes["added_by_sources"] = [
-        {"sources": [source["id"] for i, source in enumerate(sources) if mask & (1 << i)], "conditions": amount}
-        for mask, amount in sorted(masks.items())
+        {"sources": [source["id"] for i, source in enumerate(sources) if mask & (1 << i)], "conditions": amount} for mask, amount in sorted(masks.items())
     ]
     changes["total_added"] = sum(item["added"] for item in changes["by_kind"].values())
     changes["total_removed"] = sum(item["removed"] for item in changes["by_kind"].values())
@@ -452,7 +495,7 @@ def exact_networks(networks: Any) -> list[Any]:
     return sorted(set(networks), key=lambda n: (n.version, int(n.network_address), n.prefixlen))
 
 
-def prune_cache(cache: str | Path, *, max_age_days: int = 30, max_bytes: int = 1024 ** 3, now: float | None = None) -> dict[str, int]:
+def prune_cache(cache: str | Path, *, max_age_days: int = 30, max_bytes: int = 1024**3, now: float | None = None) -> dict[str, int]:
     """Delete expired source files, then oldest files until the cache fits its budget."""
     root = Path(cache)
     if not root.exists():
@@ -483,7 +526,9 @@ def prune_cache(cache: str | Path, *, max_age_days: int = 30, max_bytes: int = 1
     return {"removed_files": removed_files, "removed_bytes": removed_bytes}
 
 
-def validate_registry(previous: dict[str, Any] | None, networks: list[Any], policy: dict[str, Any], now: dt.datetime | None = None, section: str = "registry_ip") -> dict[str, Any]:
+def validate_registry(
+    previous: dict[str, Any] | None, networks: list[Any], policy: dict[str, Any], now: dt.datetime | None = None, section: str = "registry_ip"
+) -> dict[str, Any]:
     current = {str(network) for network in networks}
     registry = previous.get(section) if previous else None
     if not registry:
@@ -496,16 +541,18 @@ def validate_registry(previous: dict[str, Any] | None, networks: list[Any], poli
     limits = policy["validation"]["registry_ip"]
     if len(removed) > len(old) * limits["max_drop_fraction"] or len(added) > len(old) * limits["max_growth_fraction"]:
         raise BuildError(f"Unexpected registry IP coverage change: +{len(added)} -{len(removed)}")
-    return {"baseline": "previous-registry-build", "warnings": [],
-            "added": len(added), "removed": len(removed)}
+    return {"baseline": "previous-registry-build", "warnings": [], "added": len(added), "removed": len(removed)}
 
 
-def compile_and_verify(directory: Path, executable: Path, source_format_version: int, basename: str = "blocked-domains", networks_only: bool = False) -> dict[str, Any]:
+def compile_and_verify(
+    directory: Path, executable: Path, source_format_version: int, basename: str = "blocked-domains", networks_only: bool = False
+) -> dict[str, Any]:
     version = subprocess.run([str(executable), "version"], capture_output=True, text=True, check=True, timeout=15).stdout.splitlines()[0]
     source, binary, decoded = (directory / name for name in (basename + ".json", basename + ".srs", "roundtrip.json"))
     subprocess.run([str(executable), "rule-set", "compile", "--output", str(binary), str(source)], check=True, capture_output=True, text=True, timeout=180)
     subprocess.run([str(executable), "rule-set", "decompile", "--output", str(decoded), str(binary)], check=True, capture_output=True, text=True, timeout=180)
     original, result = read_json(source), read_json(decoded)
+
     def conditions(data: dict[str, Any]) -> Any:
         if networks_only:
             networks: list[Any] = []
@@ -531,19 +578,32 @@ def compile_and_verify(directory: Path, executable: Path, source_format_version:
                 else:
                     groups[kind].update(values)
         return groups
+
     if conditions(original) != conditions(result):
         raise BuildError("SRS compile/decompile changed the routing conditions")
     decoded.unlink()
     config = directory / "validation-config.json"
-    write_json(config, {
-        "outbounds": [{"type": "direct", "tag": "direct"}],
-        "route": {"rule_set": [{"type": "local", "tag": "generated", "format": "binary", "path": str(binary.resolve())}],
-                  "rules": [{"rule_set": ["generated"], "outbound": "direct"}], "final": "direct"},
-    })
+    write_json(
+        config,
+        {
+            "outbounds": [{"type": "direct", "tag": "direct"}],
+            "route": {
+                "rule_set": [{"type": "local", "tag": "generated", "format": "binary", "path": str(binary.resolve())}],
+                "rules": [{"rule_set": ["generated"], "outbound": "direct"}],
+                "final": "direct",
+            },
+        },
+    )
     subprocess.run([str(executable), "check", "--config", str(config)], check=True, capture_output=True, text=True, timeout=180)
     config.unlink()
-    return {"version": version, "executable_sha256": file_sha256(executable), "source_format_version": source_format_version,
-            "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False}
+    return {
+        "version": version,
+        "executable_sha256": file_sha256(executable),
+        "source_format_version": source_format_version,
+        "roundtrip": "passed",
+        "sing_box_check": "passed",
+        "network_service_started": False,
+    }
 
 
 def load_configs(root: Path) -> dict[str, Any]:
@@ -562,15 +622,23 @@ def load_configs(root: Path) -> dict[str, Any]:
     all_sources = domain_inputs + registry_inputs + service_inputs
     if len({s["id"] for s in all_sources}) != len(all_sources):
         raise BuildError("Duplicate input source ID")
-    return {"sources_config": sources_config, "service_config": service_config,
-            "registry_config": registry_config, "policy": policy,
-            "popularity_config": popularity_config, "sources": sources,
-            "psl_source": psl_source, "popularity_source": popularity_source,
-            "domain_inputs": domain_inputs, "all_sources": all_sources}
+    return {
+        "sources_config": sources_config,
+        "service_config": service_config,
+        "registry_config": registry_config,
+        "policy": policy,
+        "popularity_config": popularity_config,
+        "sources": sources,
+        "psl_source": psl_source,
+        "popularity_source": popularity_source,
+        "domain_inputs": domain_inputs,
+        "all_sources": all_sources,
+    }
 
 
-def fetch_inputs(all_sources: list[dict[str, Any]], domain_inputs: list[dict[str, Any]], cache: Path,
-                 offline: bool, network: dict[str, Any], max_workers: int) -> tuple[dict[str, Any], dict[str, str]]:
+def fetch_inputs(
+    all_sources: list[dict[str, Any]], domain_inputs: list[dict[str, Any]], cache: Path, offline: bool, network: dict[str, Any], max_workers: int
+) -> tuple[dict[str, Any], dict[str, str]]:
     """Download every input source in parallel; collect per-service fetch errors."""
     fetched: dict[str, Any] = {}
     service_errors: dict[str, str] = {}
@@ -603,7 +671,10 @@ def build(args: Any) -> None:
     previous = read_json(args.previous) if args.previous else None
     cache = root / "cache/sources"
     if not args.offline:
-        logger.info("Cache maintenance: %s", prune_cache(cache, max_age_days=getattr(args, "cache_max_age_days", 30), max_bytes=getattr(args, "cache_max_bytes", 1024 ** 3)))
+        logger.info(
+            "Cache maintenance: %s",
+            prune_cache(cache, max_age_days=getattr(args, "cache_max_age_days", 30), max_bytes=getattr(args, "cache_max_bytes", 1024**3)),
+        )
     network = policy.get("network", DEFAULT_NETWORK)
     max_workers = getattr(args, "max_workers", None) or int(network.get("max_workers", 3))
     fetched, service_errors = fetch_inputs(all_sources, domain_inputs, cache, args.offline, network, max_workers)
@@ -616,8 +687,7 @@ def build(args: Any) -> None:
         if args.offline:
             raise BuildError(f"Offline replay is missing service inputs: {sorted(service_errors)}")
         try:
-            service_networks, service_manifest = restore_services(
-                previous, service_config, policy["validation"]["max_service_stale_hours"])
+            service_networks, service_manifest = restore_services(previous, service_config, policy["validation"]["max_service_stale_hours"])
         except ValueError as exc:
             raise BuildError(f"Service download failed and stale fallback is unavailable: {service_errors}; {exc}") from exc
         service_manifest["validation"]["fetch_errors"] = service_errors
@@ -632,20 +702,24 @@ def build(args: Any) -> None:
     review_warnings: list[str] = []
     manual_exact, manual_suffix, _, manual_records = read_manual_rules(root / "config/manual-vpn.json", psl)
     direct_exact, direct_suffix, direct_ip_rules, direct_records = read_manual_rules(
-        root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True,
-        strict_review=strict_review, review_warnings=review_warnings)
+        root / "config/direct-exceptions.json", psl, require_review=True, allow_ip=True, strict_review=strict_review, review_warnings=review_warnings
+    )
     parsed_domains = parse_domains(sources, fetched, policy["validation"]["max_invalid_fraction"], parse_source)
     try:
         selected = apply_policy(parsed_domains, sources_config, policy, psl, manual_exact, manual_suffix)
     except ValueError as exc:
         raise BuildError(str(exc)) from exc
     for item, metadata in zip(parsed_domains.sources, selected.stats):
-        logger.info("Parsed %s: %s conditions, %s exact IPs, %s broad rules excluded",
-                    item.source["id"], f"{metadata['unique_conditions']:,}", metadata["ip_addresses"],
-                    metadata["filtered_conditions"])
-    popular = parse_popularity(fetched[popularity_source["id"]][0], psl,
-                               max_domains=popularity_config["max_domains"],
-                               min_entries=popularity_source["min_entries"])
+        logger.info(
+            "Parsed %s: %s conditions, %s exact IPs, %s broad rules excluded",
+            item.source["id"],
+            f"{metadata['unique_conditions']:,}",
+            metadata["ip_addresses"],
+            metadata["filtered_conditions"],
+        )
+    popular = parse_popularity(
+        fetched[popularity_source["id"]][0], psl, max_domains=popularity_config["max_domains"], min_entries=popularity_source["min_entries"]
+    )
     try:
         domains = minimize_domains(selected, psl, popular, policy["validation"]["minimum_output_domains"], manual_suffix)
     except ValueError as exc:
@@ -658,8 +732,7 @@ def build(args: Any) -> None:
     stats, total_conditions, skipped = selected.stats, selected.total_conditions, selected.skipped
     exclusions, domain_registry_ips, core_excluded = selected.exclusions, selected.registry_ips, selected.core_excluded
     sources_with_manual = [*sources, {"id": "manual-vpn"}]
-    logger.info("Smart set: %s conditions (Compact %s, popular Full rules promoted)",
-                len(smart_exact) + len(smart_suffix), len(core_exact) + len(core_suffix))
+    logger.info("Smart set: %s conditions (Compact %s, popular Full rules promoted)", len(smart_exact) + len(smart_suffix), len(core_exact) + len(core_suffix))
     validation = validate_previous(previous, stats, count, policy, allow_large_change=getattr(args, "allow_large_change", False))
     if review_warnings:
         validation.setdefault("warnings", []).extend(review_warnings)
@@ -677,9 +750,9 @@ def build(args: Any) -> None:
             else:
                 registry_cidr_by_network[network] = registry_cidr_by_network.get(network, 0) | (1 << i)
                 cidr_count += 1
-        registry_source_stats.append(dict(fetched[source["id"]][1], **parsed,
-                                          exact_prefixes=exact_count, cidr_prefixes=cidr_count,
-                                          description=source["description"]))
+        registry_source_stats.append(
+            dict(fetched[source["id"]][1], **parsed, exact_prefixes=exact_count, cidr_prefixes=cidr_count, description=source["description"])
+        )
     for network, mask in domain_registry_ips:
         registry_by_network[network] = registry_by_network.get(network, 0) | mask
     registry_networks = exact_networks(registry_by_network)
@@ -707,14 +780,20 @@ def build(args: Any) -> None:
         if expected is not None and final_decision != expected:
             raise BuildError(f"Probe regression for {name}: expected {expected}, got {final_decision}")
         # Smart must never demote a VPN decision made by Compact to Direct.
-        if match_rule(name, core_exact, core_suffix) and not direct_match \
-                and not match_rule(name, smart_exact, smart_suffix):
+        if match_rule(name, core_exact, core_suffix) and not direct_match and not match_rule(name, smart_exact, smart_suffix):
             raise BuildError(f"Smart probe regression for {name}: Compact routes to VPN but Smart does not")
-        probes.append({"domain": name, "base_decision": "VPN" if match else "Direct",
-                       "final_decision": final_decision, "expected": expected,
-                       "matched_type": match[0] if match else None, "matched_rule": match[1] if match else None,
-                       "direct_exception": direct_match[1] if direct_match else None,
-                       "sources": [s["id"] for i, s in enumerate(sources_with_manual) if mask & (1 << i)]})
+        probes.append(
+            {
+                "domain": name,
+                "base_decision": "VPN" if match else "Direct",
+                "final_decision": final_decision,
+                "expected": expected,
+                "matched_type": match[0] if match else None,
+                "matched_rule": match[1] if match else None,
+                "direct_exception": direct_match[1] if direct_match else None,
+                "sources": [s["id"] for i, s in enumerate(sources_with_manual) if mask & (1 << i)],
+            }
+        )
     lock = read_json(root / "config/tools-lock.json")
     compiler = Path(args.sing_box).resolve() if args.sing_box else root / ".tools" / ("sing-box.exe" if os.name == "nt" else "sing-box")
     if not compiler.is_file():
@@ -730,7 +809,8 @@ def build(args: Any) -> None:
             # "no hidden coverage loss" guarantee actually holds.
             raise BuildError(
                 "Baseline manifest was restored but previous/blocked-domains.json is missing; "
-                "the semantic diff cannot be computed. Restore the rules or reset the baseline explicitly.")
+                "the semantic diff cannot be computed. Restore the rules or reset the baseline explicitly."
+            )
     domain_diff = make_domain_diff(previous_rules, exact, suffix, original_exact, original_suffix, sources_with_manual)
     target = Path(args.output).resolve() if args.output else root / "dist"
     if target.exists() and any(target.iterdir()):
@@ -776,23 +856,19 @@ def build(args: Any) -> None:
             for name in sorted(smart_suffix):
                 stream.write("domain:" + name + "\n")
         smart_compilation = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-domains-smart")
-        write_json(stage / "blocked-services-ip.json", {"version": lock["source_format_version"],
-                                                       "rules": [{"ip_cidr": [str(n) for n in service_networks]}]})
+        write_json(stage / "blocked-services-ip.json", {"version": lock["source_format_version"], "rules": [{"ip_cidr": [str(n) for n in service_networks]}]})
         (stage / "blocked-services-ip.txt").write_text("".join(str(n) + "\n" for n in service_networks), encoding="utf-8")
-        service_manifest["compiler"] = compile_and_verify(stage, compiler, lock["source_format_version"],
-                                                          "blocked-services-ip", networks_only=True)
+        service_manifest["compiler"] = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-services-ip", networks_only=True)
         service_manifest["output"]["srs_bytes"] = (stage / "blocked-services-ip.srs").stat().st_size
-        write_json(stage / "blocked-registry-ip.json", {"version": lock["source_format_version"],
-                                                       "rules": [{"ip_cidr": [str(n) for n in registry_networks]}]})
+        write_json(stage / "blocked-registry-ip.json", {"version": lock["source_format_version"], "rules": [{"ip_cidr": [str(n) for n in registry_networks]}]})
         (stage / "blocked-registry-ip.txt").write_text("".join(str(n) + "\n" for n in registry_networks), encoding="utf-8")
-        registry_compiler = compile_and_verify(stage, compiler, lock["source_format_version"],
-                                               "blocked-registry-ip", networks_only=True)
-        write_json(stage / "blocked-registry-ip-cidr.json", {"version": lock["source_format_version"],
-                                                            "rules": [{"ip_cidr": [str(n) for n in registry_cidr_networks]}]})
-        (stage / "blocked-registry-ip-cidr.txt").write_text(
-            "".join(str(n) + "\n" for n in registry_cidr_networks), encoding="utf-8")
-        registry_cidr_compiler = compile_and_verify(stage, compiler, lock["source_format_version"],
-                                                    "blocked-registry-ip-cidr", networks_only=True)
+        registry_compiler = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-registry-ip", networks_only=True)
+        write_json(
+            stage / "blocked-registry-ip-cidr.json",
+            {"version": lock["source_format_version"], "rules": [{"ip_cidr": [str(n) for n in registry_cidr_networks]}]},
+        )
+        (stage / "blocked-registry-ip-cidr.txt").write_text("".join(str(n) + "\n" for n in registry_cidr_networks), encoding="utf-8")
+        registry_cidr_compiler = compile_and_verify(stage, compiler, lock["source_format_version"], "blocked-registry-ip-cidr", networks_only=True)
         direct_rules = {}
         if direct_exact:
             direct_rules["domain"] = sorted(direct_exact)
@@ -800,8 +876,7 @@ def build(args: Any) -> None:
             direct_rules["domain_suffix"] = sorted(direct_suffix)
         if direct_ip_rules:
             direct_rules["ip_cidr"] = [str(n) for n in normalize_networks(direct_ip_rules)]
-        write_json(stage / "routing-direct-exceptions.json", {
-            "version": lock["source_format_version"], "rules": [direct_rules] if direct_rules else []})
+        write_json(stage / "routing-direct-exceptions.json", {"version": lock["source_format_version"], "rules": [direct_rules] if direct_rules else []})
         direct_lines = ["full:" + name for name in sorted(direct_exact)]
         direct_lines += ["domain:" + name for name in sorted(direct_suffix)]
         direct_lines += [str(n) for n in normalize_networks(direct_ip_rules)]
@@ -826,9 +901,9 @@ def build(args: Any) -> None:
                 if agg_id in remaining and remaining - {agg_id} <= members:
                     # Every other source is already contained in this aggregator.
                     remaining = {agg_id}
-            intersections.append({"sources": ids, "unique_conditions": amount,
-                                  "independent_sources": sorted(remaining),
-                                  "independent_confirmation": len(remaining) > 1})
+            intersections.append(
+                {"sources": ids, "unique_conditions": amount, "independent_sources": sorted(remaining), "independent_confirmation": len(remaining) > 1}
+            )
         registry_output = {
             "total_prefixes": len(registry_networks),
             "ipv4_prefixes": sum(n.version == 4 for n in registry_networks),
@@ -843,86 +918,139 @@ def build(args: Any) -> None:
             "prefixes": [str(n) for n in registry_cidr_networks],
             "srs_bytes": (stage / "blocked-registry-ip-cidr.srs").stat().st_size,
         }
-        core_output = {"total_conditions": len(core_exact) + len(core_suffix),
-                       "exact": len(core_exact), "suffix": len(core_suffix),
-                       "source_ids": [s["id"] for s in sources if s["id"] not in core_excluded] + ["manual-vpn"],
-                       "srs_bytes": (stage / "blocked-domains-core.srs").stat().st_size}
-        smart_output = {"total_conditions": len(smart_exact) + len(smart_suffix),
-                        "exact": len(smart_exact), "suffix": len(smart_suffix),
-                        "popularity_source": popularity_source["id"],
-                        "popular_domains": len(popular),
-                        "srs_bytes": (stage / "blocked-domains-smart.srs").stat().st_size}
+        core_output = {
+            "total_conditions": len(core_exact) + len(core_suffix),
+            "exact": len(core_exact),
+            "suffix": len(core_suffix),
+            "source_ids": [s["id"] for s in sources if s["id"] not in core_excluded] + ["manual-vpn"],
+            "srs_bytes": (stage / "blocked-domains-core.srs").stat().st_size,
+        }
+        smart_output = {
+            "total_conditions": len(smart_exact) + len(smart_suffix),
+            "exact": len(smart_exact),
+            "suffix": len(smart_suffix),
+            "popularity_source": popularity_source["id"],
+            "popular_domains": len(popular),
+            "srs_bytes": (stage / "blocked-domains-smart.srs").stat().st_size,
+        }
         built_at = utc_now()
         repository = os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")
         release_base = f"https://github.com/{repository}/releases/latest/download/"
         catalog_names = list(DATASET_NAMES)
-        write_json(stage / "catalog.json", {"generated": built_at, "sources": [
-            {"id": "routing", "url": release_base + "{}", "names": catalog_names}
-        ]})
+        write_json(stage / "catalog.json", {"generated": built_at, "sources": [{"id": "routing", "url": release_base + "{}", "names": catalog_names}]})
         write_json(stage / "presets.user.json", make_presets(release_base))
-        write_json(stage / "status.json", {"schemaVersion": 1, "label": "domains",
-                                           "message": f"{count:,}".replace(",", " "), "color": "brightgreen"})
-        write_json(stage / "updated.json", {"schemaVersion": 1, "label": "updated",
-                                            "message": built_at.replace("T", " "), "color": "blue"})
+        write_json(stage / "status.json", {"schemaVersion": 1, "label": "domains", "message": f"{count:,}".replace(",", " "), "color": "brightgreen"})
+        write_json(stage / "updated.json", {"schemaVersion": 1, "label": "updated", "message": built_at.replace("T", " "), "color": "blue"})
         output_files = [path.name for path in stage.iterdir() if path.is_file()]
         manifest = {
-            "schema_version": 1, "built_at": built_at, "offline_replay": args.offline,
-            "sources": stats, "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
+            "schema_version": 1,
+            "built_at": built_at,
+            "offline_replay": args.offline,
+            "sources": stats,
+            "public_suffix_list": dict(fetched[psl_source["id"]][1], parsed_rules=psl.count),
             "service_networks": service_manifest,
             "core": {"output": core_output, "compiler": core_compilation},
             "smart": {"output": smart_output, "compiler": smart_compilation},
-            "registry_ip": {"sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]]
-                                       + [{key: value for key, value in source.items() if key not in {"prefixes", "raw_prefixes"}}
-                                          for source in registry_source_stats],
-                            "output": registry_output, "validation": registry_validation, "compiler": registry_compiler},
-            "registry_cidr": {"sources": registry_source_stats, "output": registry_cidr_output,
-                              "validation": registry_cidr_validation, "compiler": registry_cidr_compiler},
-            "direct_exceptions": {"rules": direct_records, "compiler": direct_compiler,
-                                  "output": {"total_conditions": len(direct_exact) + len(direct_suffix) + len(direct_ip_rules),
-                                             "prefixes": [str(n) for n in normalize_networks(direct_ip_rules)],
-                                             "srs_bytes": (stage / "routing-direct-exceptions.srs").stat().st_size}},
+            "registry_ip": {
+                "sources": [{"id": s["id"], "ip_addresses": s["ip_addresses"]} for s in stats if s["ip_addresses"]]
+                + [{key: value for key, value in source.items() if key not in {"prefixes", "raw_prefixes"}} for source in registry_source_stats],
+                "output": registry_output,
+                "validation": registry_validation,
+                "compiler": registry_compiler,
+            },
+            "registry_cidr": {
+                "sources": registry_source_stats,
+                "output": registry_cidr_output,
+                "validation": registry_cidr_validation,
+                "compiler": registry_cidr_compiler,
+            },
+            "direct_exceptions": {
+                "rules": direct_records,
+                "compiler": direct_compiler,
+                "output": {
+                    "total_conditions": len(direct_exact) + len(direct_suffix) + len(direct_ip_rules),
+                    "prefixes": [str(n) for n in normalize_networks(direct_ip_rules)],
+                    "srs_bytes": (stage / "routing-direct-exceptions.srs").stat().st_size,
+                },
+            },
             "manual_vpn": {"rules": manual_records},
-            "domain_diff": {"added": domain_diff["total_added"], "removed": domain_diff["total_removed"],
-                            "effective_added": domain_diff["effective_added"],
-                            "effective_removed": domain_diff["effective_removed"]},
+            "domain_diff": {
+                "added": domain_diff["total_added"],
+                "removed": domain_diff["total_removed"],
+                "effective_added": domain_diff["effective_added"],
+                "effective_removed": domain_diff["effective_removed"],
+            },
             "domain_changes": domain_diff,
-            "configuration_sha256": config_hashes, "compiler": compilation,
-            "environment": {"python": sys.version.split()[0], "idna": idna.__version__,
-                            "github_commit": os.environ.get("GITHUB_SHA"),
-                            "repository": os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing")},
-            "counts": {"source_unique_conditions_sum": total_conditions, "filtered_source_conditions_sum": skipped,
-                       "unique_filtered_conditions": before_minimize,
-                       "duplicate_conditions_across_sources": total_conditions - skipped - before_minimize,
-                       "redundant_conditions_removed": before_minimize - count},
+            "configuration_sha256": config_hashes,
+            "compiler": compilation,
+            "environment": {
+                "python": sys.version.split()[0],
+                "idna": idna.__version__,
+                "github_commit": os.environ.get("GITHUB_SHA"),
+                "repository": os.environ.get("GITHUB_REPOSITORY", "Vanilla-SilQ-HD/Routing"),
+            },
+            "counts": {
+                "source_unique_conditions_sum": total_conditions,
+                "filtered_source_conditions_sum": skipped,
+                "unique_filtered_conditions": before_minimize,
+                "duplicate_conditions_across_sources": total_conditions - skipped - before_minimize,
+                "redundant_conditions_removed": before_minimize - count,
+            },
             "exact_intersections_before_minimization": intersections,
-            "output": {"total_conditions": count, "exact": len(exact), "suffix": len(suffix),
-                       "srs_bytes": (stage / "blocked-domains.srs").stat().st_size,
-                       "files": {name: file_sha256(stage / name) for name in output_files}},
-            "validation": validation, "elapsed_seconds": round(time.monotonic() - started, 2),
-            "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
-                      "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": True, "registry_ip_rules_included": True,
-                      "direct_exceptions_included": True, "dns_configuration_included": False},
+            "output": {
+                "total_conditions": count,
+                "exact": len(exact),
+                "suffix": len(suffix),
+                "srs_bytes": (stage / "blocked-domains.srs").stat().st_size,
+                "files": {name: file_sha256(stage / name) for name in output_files},
+            },
+            "validation": validation,
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+            "scope": {
+                "domains_only": False,
+                "personal_rules_included": False,
+                "router_access": False,
+                "broad_ai_category_included": False,
+                "ru_direct_category_included": False,
+                "ip_rules_included": True,
+                "registry_ip_rules_included": True,
+                "direct_exceptions_included": True,
+                "dns_configuration_included": False,
+            },
         }
         write_json(stage / "manifest.json", manifest)
         (stage / "report.html").write_text(make_report(manifest, excluded, probes), encoding="utf-8")
-        (stage / "SHA256SUMS").write_bytes("".join(
-            f"{file_sha256(path)}  {path.name}\n" for path in sorted(stage.iterdir()) if path.is_file()
-        ).encode("ascii"))
+        (stage / "SHA256SUMS").write_bytes("".join(f"{file_sha256(path)}  {path.name}\n" for path in sorted(stage.iterdir()) if path.is_file()).encode("ascii"))
         if target.exists():
             target.rmdir()
         stage.rename(target)
-    logger.info(json.dumps({"output": str(target), "domains": count, "service_networks": service_manifest["output"],
-                      "registry_ip": registry_output, "direct_exceptions": len(direct_records),
-                      "srs_bytes": manifest["output"]["srs_bytes"], "excluded_broad_conditions": len(excluded),
-                      "validation": compilation}, ensure_ascii=False))
+    logger.info(
+        json.dumps(
+            {
+                "output": str(target),
+                "domains": count,
+                "service_networks": service_manifest["output"],
+                "registry_ip": registry_output,
+                "direct_exceptions": len(direct_records),
+                "srs_bytes": manifest["output"]["srs_bytes"],
+                "excluded_broad_conditions": len(excluded),
+                "validation": compilation,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def make_presets(release_base: str) -> dict[str, Any]:
     presets = [
-        {"id": preset.identifier, "name": preset.title, "iconSlug": "router", "category": "custom",
-         "notice": preset.notice,
-         "engines": {"singbox": {"ruleSets": preset.rule_sets(release_base), "action": "tunnel"}}}
+        {
+            "id": preset.identifier,
+            "name": preset.title,
+            "iconSlug": "router",
+            "category": "custom",
+            "notice": preset.notice,
+            "engines": {"singbox": {"ruleSets": preset.rule_sets(release_base), "action": "tunnel"}},
+        }
         for preset in PRESETS
     ]
     return {"presets": presets}
@@ -940,7 +1068,7 @@ def main() -> None:
     parser.add_argument("--sing-box", help="Path to the pinned sing-box compiler")
     parser.add_argument("--max-workers", type=int, default=None, choices=range(1, 17), metavar="1..16")
     parser.add_argument("--cache-max-age-days", type=int, default=30)
-    parser.add_argument("--cache-max-bytes", type=int, default=1024 ** 3)
+    parser.add_argument("--cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
     configure_logging(args.debug)

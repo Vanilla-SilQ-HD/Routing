@@ -2,6 +2,7 @@
 
 These schemas double as the published format documentation for external consumers.
 """
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,5 @@
 """Stable public imports for the reviewed Routing implementation."""
+
 from __future__ import annotations
 
 import importlib

@@ -1,4 +1,5 @@
 """Validate generated AWG Manager catalog and user presets offline."""
+
 from __future__ import annotations
 
 import argparse

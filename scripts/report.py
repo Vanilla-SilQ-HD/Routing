@@ -1,4 +1,5 @@
 """Self-contained interactive HTML report for a Routing build."""
+
 from __future__ import annotations
 
 import json
@@ -100,7 +101,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
         },
     }
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    template = r'''<!doctype html>
+    template = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -276,5 +277,5 @@ document.querySelectorAll('.tabs button').forEach(button=>button.addEventListene
 const initial=location.hash.slice(1);if($(initial)&&document.querySelector(`[data-tab="${initial}"]`))document.querySelector(`[data-tab="${initial}"]`).click();
 </script>
 </body>
-</html>'''
+</html>"""
     return template.replace("__PAYLOAD__", payload)

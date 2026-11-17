@@ -1,4 +1,5 @@
 """Shared HTTPS redirect handlers used when fetching sources and release assets."""
+
 from __future__ import annotations
 
 import urllib.parse

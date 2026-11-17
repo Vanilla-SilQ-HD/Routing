@@ -7,6 +7,7 @@ Usage:
 This replaces the manual cp steps in the Pages workflow and ensures
 the published site always matches the datasets registry.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,9 +64,7 @@ def _publish_monitoring(build_dir: Path, output_dir: Path) -> None:
         if stale.is_file():
             shutil.copy2(stale, output_dir / "stale-candidates.json")
         return
-    (output_dir / "monitoring.json").write_text(
-        json.dumps(UNAVAILABLE_MONITORING, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    (output_dir / "monitoring.json").write_text(json.dumps(UNAVAILABLE_MONITORING, ensure_ascii=False) + "\n", encoding="utf-8")
     (output_dir / "monitoring.html").write_text(UNAVAILABLE_HTML, encoding="utf-8")
 
 

@@ -2,6 +2,7 @@
 
 Only GitHub Releases APIs are used. No router access or third-party actions.
 """
+
 import argparse
 import hashlib
 import json
@@ -44,14 +45,31 @@ class PublishError(RoutingError):
 
 DATASETS = DATASET_NAMES
 BUILD_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".json", ".txt")}
-BUILD_FILES |= {"manifest.json", "excluded.json", "probes.json", "domain-changes.json",
-                "manual-rules.json", "report.html", "status.json", "updated.json", "catalog.json", "presets.user.json"}
+BUILD_FILES |= {
+    "manifest.json",
+    "excluded.json",
+    "probes.json",
+    "domain-changes.json",
+    "manual-rules.json",
+    "report.html",
+    "status.json",
+    "updated.json",
+    "catalog.json",
+    "presets.user.json",
+}
 RELEASE_FILES = {name + suffix for name in DATASETS for suffix in (".srs", ".srs.sha256")}
-RELEASE_FILES |= {"manifest.json", "domain-changes.json", "release.json", "SHA256SUMS",
-                  "routing-evidence.zip", "catalog.json"}
+RELEASE_FILES |= {"manifest.json", "domain-changes.json", "release.json", "SHA256SUMS", "routing-evidence.zip", "catalog.json"}
 EVIDENCE_FILES = [name + ".json" for name in DATASETS]
-EVIDENCE_FILES += ["excluded.json", "probes.json", "domain-changes.json", "manual-rules.json",
-                   "report.html", "status.json", "updated.json", "presets.user.json"]
+EVIDENCE_FILES += [
+    "excluded.json",
+    "probes.json",
+    "domain-changes.json",
+    "manual-rules.json",
+    "report.html",
+    "status.json",
+    "updated.json",
+    "presets.user.json",
+]
 MAX_ASSET_BYTES = 128 * 1024 * 1024
 
 # Only tags produced by this project's release automation may be deleted.
@@ -85,11 +103,14 @@ def initial_baseline_allowed(latest_release: dict[str, Any] | None, reset_baseli
 
 
 def verify_compiler(compiler: Any, lock: dict[str, Any]) -> None:
-    if (not isinstance(compiler, dict)
-            or compiler.get("version") != "sing-box version " + lock["sing_box_version"]
-            or compiler.get("source_format_version") != lock["source_format_version"]
-            or compiler.get("roundtrip") != "passed" or compiler.get("sing_box_check") != "passed"
-            or compiler.get("network_service_started") is not False):
+    if (
+        not isinstance(compiler, dict)
+        or compiler.get("version") != "sing-box version " + lock["sing_box_version"]
+        or compiler.get("source_format_version") != lock["source_format_version"]
+        or compiler.get("roundtrip") != "passed"
+        or compiler.get("sing_box_check") != "passed"
+        or compiler.get("network_service_started") is not False
+    ):
         raise PublishError("Compiler validation is missing or failed")
 
 
@@ -109,15 +130,23 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
     if manifest["environment"]["github_commit"] != commit:
         raise PublishError("Artifact was built from a different commit")
     from routing.recipe import recipe_hashes
+
     if manifest["configuration_sha256"] != recipe_hashes(root):
         raise PublishError("Artifact recipe does not match this checkout")
     lock = json.loads((root / "config/tools-lock.json").read_text(encoding="utf-8"))
     verify_compiler(manifest["compiler"], lock)
     scope = manifest["scope"]
-    expected_scope = {"domains_only": False, "personal_rules_included": False, "router_access": False,
-                      "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": True, "registry_ip_rules_included": True,
-                      "direct_exceptions_included": True, "dns_configuration_included": False}
+    expected_scope = {
+        "domains_only": False,
+        "personal_rules_included": False,
+        "router_access": False,
+        "broad_ai_category_included": False,
+        "ru_direct_category_included": False,
+        "ip_rules_included": True,
+        "registry_ip_rules_included": True,
+        "direct_exceptions_included": True,
+        "dns_configuration_included": False,
+    }
     if scope != expected_scope:
         raise PublishError("Unexpected routing scope")
     output = manifest["output"]
@@ -133,49 +162,64 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
         raise PublishError("Service network sources are missing")
     service_output = service.get("output", {})
     positive_counts = ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "ipv4_addresses", "ipv6_addresses", "srs_bytes")
-    if (not isinstance(service_output, dict)
-            or any(type(service_output.get(key)) is not int or service_output[key] < 1 for key in positive_counts)
-            or service_output["total_prefixes"] != service_output["ipv4_prefixes"] + service_output["ipv6_prefixes"]
-            or service_output["srs_bytes"] != (directory / "blocked-services-ip.srs").stat().st_size):
+    if (
+        not isinstance(service_output, dict)
+        or any(type(service_output.get(key)) is not int or service_output[key] < 1 for key in positive_counts)
+        or service_output["total_prefixes"] != service_output["ipv4_prefixes"] + service_output["ipv6_prefixes"]
+        or service_output["srs_bytes"] != (directory / "blocked-services-ip.srs").stat().st_size
+    ):
         raise PublishError("Unexpected service network counts or binary size")
     verify_compiler(service.get("compiler"), lock)
     service_validation = service.get("validation", {})
-    if (not isinstance(service_validation, dict)
-            or service_validation.get("baseline") not in {"first-service-build", "previous-service-build", "previous-service-data-stale"}
-            or service_validation.get("warnings") != []):
+    if (
+        not isinstance(service_validation, dict)
+        or service_validation.get("baseline") not in {"first-service-build", "previous-service-build", "previous-service-data-stale"}
+        or service_validation.get("warnings") != []
+    ):
         raise PublishError("Service networks have an unknown baseline or unresolved validation warnings")
     if service_validation["baseline"] == "previous-service-data-stale":
         policy = json.loads((root / "config/policy.json").read_text(encoding="utf-8"))
-        if (not service_validation.get("fetch_errors") or not service_validation.get("restored_from_built_at")
-                or not 0 <= service_validation.get("stale_hours", -1) <= policy["validation"]["max_service_stale_hours"]):
+        if (
+            not service_validation.get("fetch_errors")
+            or not service_validation.get("restored_from_built_at")
+            or not 0 <= service_validation.get("stale_hours", -1) <= policy["validation"]["max_service_stale_hours"]
+        ):
             raise PublishError("Stale service fallback is missing its evidence or exceeds the time limit")
     registry = manifest.get("registry_ip")
     if not isinstance(registry, dict):
         raise PublishError("Registry IP evidence is missing")
     registry_output = registry.get("output", {})
-    if (any(type(registry_output.get(key)) is not int for key in ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "srs_bytes"))
-            or registry_output["total_prefixes"] < 1
-            or registry_output["total_prefixes"] != registry_output["ipv4_prefixes"] + registry_output["ipv6_prefixes"]
-            or len(registry_output.get("prefixes", [])) != registry_output["total_prefixes"]
-            or registry_output["srs_bytes"] != (directory / "blocked-registry-ip.srs").stat().st_size):
+    if (
+        any(type(registry_output.get(key)) is not int for key in ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "srs_bytes"))
+        or registry_output["total_prefixes"] < 1
+        or registry_output["total_prefixes"] != registry_output["ipv4_prefixes"] + registry_output["ipv6_prefixes"]
+        or len(registry_output.get("prefixes", [])) != registry_output["total_prefixes"]
+        or registry_output["srs_bytes"] != (directory / "blocked-registry-ip.srs").stat().st_size
+    ):
         raise PublishError("Unexpected registry IP counts or binary size")
     verify_compiler(registry.get("compiler"), lock)
-    if (registry.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
-            or registry["validation"].get("warnings") != []):
+    if (
+        registry.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
+        or registry["validation"].get("warnings") != []
+    ):
         raise PublishError("Registry IP has an unknown baseline or unresolved validation warnings")
     registry_cidr = manifest.get("registry_cidr")
     if not isinstance(registry_cidr, dict):
         raise PublishError("Registry CIDR evidence is missing")
     cidr_output = registry_cidr.get("output", {})
-    if (any(type(cidr_output.get(key)) is not int for key in ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "srs_bytes"))
-            or cidr_output["total_prefixes"] < 1
-            or cidr_output["total_prefixes"] != cidr_output["ipv4_prefixes"] + cidr_output["ipv6_prefixes"]
-            or len(cidr_output.get("prefixes", [])) != cidr_output["total_prefixes"]
-            or cidr_output["srs_bytes"] != (directory / "blocked-registry-ip-cidr.srs").stat().st_size):
+    if (
+        any(type(cidr_output.get(key)) is not int for key in ("total_prefixes", "ipv4_prefixes", "ipv6_prefixes", "srs_bytes"))
+        or cidr_output["total_prefixes"] < 1
+        or cidr_output["total_prefixes"] != cidr_output["ipv4_prefixes"] + cidr_output["ipv6_prefixes"]
+        or len(cidr_output.get("prefixes", [])) != cidr_output["total_prefixes"]
+        or cidr_output["srs_bytes"] != (directory / "blocked-registry-ip-cidr.srs").stat().st_size
+    ):
         raise PublishError("Unexpected registry CIDR counts or binary size")
     verify_compiler(registry_cidr.get("compiler"), lock)
-    if (registry_cidr.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
-            or registry_cidr["validation"].get("warnings") != []):
+    if (
+        registry_cidr.get("validation", {}).get("baseline") not in {"first-registry-build", "previous-registry-build"}
+        or registry_cidr["validation"].get("warnings") != []
+    ):
         raise PublishError("Registry CIDR has an unknown baseline or unresolved validation warnings")
     registry_config = json.loads((root / "config/registry-ip-sources.json").read_text(encoding="utf-8"))
     expected_source_ids = {source["id"] for source in registry_config["sources"]}
@@ -184,21 +228,30 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
     if not expected_source_ids.issubset(exact_source_ids) or cidr_source_ids != expected_source_ids:
         raise PublishError("Registry IP source provenance is incomplete")
     core = manifest.get("core")
-    if (not isinstance(core, dict) or type(core.get("output", {}).get("total_conditions")) is not int
-            or core["output"]["total_conditions"] < 1
-            or core["output"].get("srs_bytes") != (directory / "blocked-domains-core.srs").stat().st_size):
+    if (
+        not isinstance(core, dict)
+        or type(core.get("output", {}).get("total_conditions")) is not int
+        or core["output"]["total_conditions"] < 1
+        or core["output"].get("srs_bytes") != (directory / "blocked-domains-core.srs").stat().st_size
+    ):
         raise PublishError("Unexpected compact domain output")
     verify_compiler(core.get("compiler"), lock)
     smart = manifest.get("smart")
-    if (not isinstance(smart, dict) or type(smart.get("output", {}).get("total_conditions")) is not int
-            or smart["output"]["total_conditions"] < core["output"]["total_conditions"]
-            or smart["output"].get("srs_bytes") != (directory / "blocked-domains-smart.srs").stat().st_size):
+    if (
+        not isinstance(smart, dict)
+        or type(smart.get("output", {}).get("total_conditions")) is not int
+        or smart["output"]["total_conditions"] < core["output"]["total_conditions"]
+        or smart["output"].get("srs_bytes") != (directory / "blocked-domains-smart.srs").stat().st_size
+    ):
         raise PublishError("Unexpected smart domain output")
     verify_compiler(smart.get("compiler"), lock)
     direct = manifest.get("direct_exceptions")
-    if (not isinstance(direct, dict) or type(direct.get("output", {}).get("total_conditions")) is not int
-            or direct["output"]["total_conditions"] < 0
-            or direct["output"].get("srs_bytes") != (directory / "routing-direct-exceptions.srs").stat().st_size):
+    if (
+        not isinstance(direct, dict)
+        or type(direct.get("output", {}).get("total_conditions")) is not int
+        or direct["output"]["total_conditions"] < 0
+        or direct["output"].get("srs_bytes") != (directory / "routing-direct-exceptions.srs").stat().st_size
+    ):
         raise PublishError("Unexpected Direct exception output")
     verify_compiler(direct.get("compiler"), lock)
     validation = manifest["validation"]
@@ -223,13 +276,17 @@ def verify_candidate(directory: Path, root: Path, commit: str, *, allow_initial_
 
 def fingerprint(manifest: dict[str, Any]) -> str:
     # Fetch timestamps and provenance-only changes do not justify a new binary release.
-    identity = {"schema_version": 1,
-                "srs_sha256": {name + ".srs": manifest["output"]["files"][name + ".srs"] for name in DATASETS},
-                "configuration_sha256": manifest["configuration_sha256"]}
+    identity = {
+        "schema_version": 1,
+        "srs_sha256": {name + ".srs": manifest["output"]["files"][name + ".srs"] for name in DATASETS},
+        "configuration_sha256": manifest["configuration_sha256"],
+    }
     return hashlib.sha256(json_bytes(identity)).hexdigest()
 
 
-def prepare_assets(candidate: Path, destination: Path, manifest: dict[str, Any], repository: str, run_id: str, attempt: str, previous_release_tag: str | None = None) -> dict[str, Any]:
+def prepare_assets(
+    candidate: Path, destination: Path, manifest: dict[str, Any], repository: str, run_id: str, attempt: str, previous_release_tag: str | None = None
+) -> dict[str, Any]:
     destination.mkdir(parents=True, exist_ok=False)
     for name in ("manifest.json", "domain-changes.json", "catalog.json"):
         shutil.copyfile(candidate / name, destination / name)
@@ -237,20 +294,24 @@ def prepare_assets(candidate: Path, destination: Path, manifest: dict[str, Any],
         shutil.copyfile(candidate / (name + ".srs"), destination / (name + ".srs"))
         digest = manifest["output"]["files"][name + ".srs"]
         (destination / (name + ".srs.sha256")).write_bytes(f"{digest}  {name}.srs\n".encode("ascii"))
-    with zipfile.ZipFile(destination / "routing-evidence.zip", "w",
-                         compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    with zipfile.ZipFile(destination / "routing-evidence.zip", "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name in EVIDENCE_FILES:
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o600 << 16
             archive.writestr(info, (candidate / name).read_bytes())
     digest = manifest["output"]["files"]["blocked-domains.srs"]
-    metadata = {"schema_version": 1, "fingerprint": fingerprint(manifest), "srs_sha256": digest,
-                "previous_release_tag": previous_release_tag,
-                "service_srs_sha256": manifest["output"]["files"]["blocked-services-ip.srs"],
-                "dataset_srs_sha256": {name: manifest["output"]["files"][name + ".srs"] for name in DATASETS},
-                "github_commit": manifest["environment"]["github_commit"], "built_at": manifest["built_at"],
-                "run_url": f"https://github.com/{repository}/actions/runs/{run_id}/attempts/{attempt}"}
+    metadata = {
+        "schema_version": 1,
+        "fingerprint": fingerprint(manifest),
+        "srs_sha256": digest,
+        "previous_release_tag": previous_release_tag,
+        "service_srs_sha256": manifest["output"]["files"]["blocked-services-ip.srs"],
+        "dataset_srs_sha256": {name: manifest["output"]["files"][name + ".srs"] for name in DATASETS},
+        "github_commit": manifest["environment"]["github_commit"],
+        "built_at": manifest["built_at"],
+        "run_url": f"https://github.com/{repository}/actions/runs/{run_id}/attempts/{attempt}",
+    }
     (destination / "release.json").write_bytes(json_bytes(metadata))
     lines = [f"{sha256(path)}  {path.name}\n" for path in sorted(destination.iterdir())]
     (destination / "SHA256SUMS").write_bytes("".join(lines).encode("ascii"))
@@ -267,9 +328,13 @@ class GitHub:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or parsed.netloc not in {"api.github.com", "uploads.github.com"}:
             raise PublishError("Refusing to send credentials outside GitHub API hosts")
-        headers = {"Authorization": "Bearer " + self.token, "User-Agent": "Routing-release/1",
-                   "X-GitHub-Api-Version": "2022-11-28", "Cache-Control": "no-cache",
-                   "Accept": "application/octet-stream" if binary else "application/vnd.github+json"}
+        headers = {
+            "Authorization": "Bearer " + self.token,
+            "User-Agent": "Routing-release/1",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Cache-Control": "no-cache",
+            "Accept": "application/octet-stream" if binary else "application/vnd.github+json",
+        }
         if data is not None:
             headers["Content-Type"] = "application/octet-stream" if upload else "application/json"
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -328,12 +393,22 @@ class GitHub:
                 return tags
             page += 1
 
-
     def create_draft(self, tag: str, commit: str, title: str, body: str, prerelease: bool = False) -> Any:
-        return self.request("POST", self.base + "/releases", json_bytes({
-            "tag_name": tag, "target_commitish": commit, "name": title, "body": body,
-            "draft": True, "prerelease": prerelease, "make_latest": "false",
-        }))
+        return self.request(
+            "POST",
+            self.base + "/releases",
+            json_bytes(
+                {
+                    "tag_name": tag,
+                    "target_commitish": commit,
+                    "name": title,
+                    "body": body,
+                    "draft": True,
+                    "prerelease": prerelease,
+                    "make_latest": "false",
+                }
+            ),
+        )
 
     def upload(self, release_id: int, path: Path) -> Any:
         if path.stat().st_size > MAX_ASSET_BYTES:
@@ -345,9 +420,11 @@ class GitHub:
         return cast(bytes, self.request("GET", self.base + f"/releases/assets/{int(asset['id'])}", binary=True, limit=limit))
 
     def publish(self, release_id: int, prerelease: bool = False) -> Any:
-        return self.request("PATCH", self.base + f"/releases/{int(release_id)}",
-                            json_bytes({"draft": False, "prerelease": prerelease,
-                                        "make_latest": "false" if prerelease else "true"}))
+        return self.request(
+            "PATCH",
+            self.base + f"/releases/{int(release_id)}",
+            json_bytes({"draft": False, "prerelease": prerelease, "make_latest": "false" if prerelease else "true"}),
+        )
 
 
 def human_size(value: int) -> str:
@@ -373,8 +450,7 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
     base = f"https://github.com/{repository}/releases/latest/download/"
     for dataset in DATASET_REGISTRY:
         digest = metadata["dataset_srs_sha256"][dataset.name]
-        rows.append(f"| [{dataset.title}]({base}{dataset.name}.srs) | {dataset.description} | "
-                    f"{human_size(sizes[dataset.name])} | `{digest[:12]}…` |")
+        rows.append(f"| [{dataset.title}]({base}{dataset.name}.srs) | {dataset.description} | {human_size(sizes[dataset.name])} | `{digest[:12]}…` |")
     pages = f"https://{owner.lower()}.github.io/{project}/"
     return f"""Выборочная маршрутизация: недоступные ресурсы через VPN, остальное напрямую.
 
@@ -382,16 +458,16 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
 
 | Показатель | Значение |
 | --- | ---: |
-| Доменных условий · Full | **{output['total_conditions']:,}** |
-| Доменных условий · Compact | **{core['total_conditions']:,}** |
-| Доменных условий · Smart | **{smart['total_conditions']:,}** |
-| Точные имена / suffix | {output['exact']:,} / {output['suffix']:,} |
-| Сети Telegram | **{service['total_prefixes']}** |
-| Registry IP | **{registry['total_prefixes']}** |
-| Широкие CIDR (необязательно) | **{registry_cidr['total_prefixes']}** |
-| Direct-исключения | **{direct['total_conditions']}** |
-| Источники | **{len(manifest['sources'])}** |
-| sing-box | `{manifest['compiler']['version']}` |
+| Доменных условий · Full | **{output["total_conditions"]:,}** |
+| Доменных условий · Compact | **{core["total_conditions"]:,}** |
+| Доменных условий · Smart | **{smart["total_conditions"]:,}** |
+| Точные имена / suffix | {output["exact"]:,} / {output["suffix"]:,} |
+| Сети Telegram | **{service["total_prefixes"]}** |
+| Registry IP | **{registry["total_prefixes"]}** |
+| Широкие CIDR (необязательно) | **{registry_cidr["total_prefixes"]}** |
+| Direct-исключения | **{direct["total_conditions"]}** |
+| Источники | **{len(manifest["sources"])}** |
+| sing-box | `{manifest["compiler"]["version"]}` |
 
 ## Скачать
 
@@ -405,11 +481,11 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
 
 | Добавлено | Удалено | Новое покрытие | Потерянное покрытие |
 | ---: | ---: | ---: | ---: |
-| {changes['added']:,} | {changes['removed']:,} | **{changes['effective_added']:,}** | **{changes['effective_removed']:,}** |
+| {changes["added"]:,} | {changes["removed"]:,} | **{changes["effective_added"]:,}** | **{changes["effective_removed"]:,}** |
 
 Полный semantic diff: [domain-changes.json]({base}domain-changes.json). Источники и происхождение записей: [manifest.json]({base}manifest.json).
 
-Тип baseline: `{manifest.get('domain_changes', {}).get('baseline', 'unknown')}`.
+Тип baseline: `{manifest.get("domain_changes", {}).get("baseline", "unknown")}`.
 
 ## Проверки
 
@@ -426,7 +502,7 @@ def make_release_body(manifest: dict[str, Any], metadata: dict[str, Any], reposi
 - [AWG Manager Catalog]({base}catalog.json)
 - [Evidence ZIP: исходники, probes и отчёт]({base}routing-evidence.zip)
 - [SHA256SUMS]({base}SHA256SUMS)
-- [Проверенный workflow]({metadata['run_url']})
+- [Проверенный workflow]({metadata["run_url"]})
 """
 
 
@@ -447,19 +523,24 @@ def publish(assets: Path, manifest: dict[str, Any], metadata: dict[str, Any], gi
                         raise PublishError("Unchanged release has inconsistent binary metadata")
                     binary = github.download(inventory[name + ".srs"])
                     checksum = github.download(inventory[name + ".srs.sha256"], limit=1024)
-                    if (hashlib.sha256(binary).hexdigest() != expected_hash
-                            or checksum != (assets / (name + ".srs.sha256")).read_bytes()):
+                    if hashlib.sha256(binary).hexdigest() != expected_hash or checksum != (assets / (name + ".srs.sha256")).read_bytes():
                         raise PublishError(f"Unchanged release failed binary integrity verification: {name}")
                 return {"status": "unchanged", "release_url": latest["html_url"], "tag": latest["tag_name"]}
     is_candidate = manifest["validation"]["baseline"] == "large-change-candidate"
     body = make_release_body(manifest, metadata, github.repository)
     if is_candidate:
-        body = ("> **Candidate pre-release** — покрытие выросло сверх порога. Набор опубликован для проверки "
-                "и **не** помечен как Latest. Постоянные URL `releases/latest/download/...` продолжают вести на "
-                "предыдущий стабильный набор. Подтвердите через workflow `promote_candidate`.\n\n") + body
-    release = github.create_draft(tag, manifest["environment"]["github_commit"],
-                                  ("Routing candidate · " if is_candidate else "Routing · ") + manifest["built_at"],
-                                  body, prerelease=is_candidate)
+        body = (
+            "> **Candidate pre-release** — покрытие выросло сверх порога. Набор опубликован для проверки "
+            "и **не** помечен как Latest. Постоянные URL `releases/latest/download/...` продолжают вести на "
+            "предыдущий стабильный набор. Подтвердите через workflow `promote_candidate`.\n\n"
+        ) + body
+    release = github.create_draft(
+        tag,
+        manifest["environment"]["github_commit"],
+        ("Routing candidate · " if is_candidate else "Routing · ") + manifest["built_at"],
+        body,
+        prerelease=is_candidate,
+    )
     if release.get("draft") is not True:
         raise PublishError("GitHub did not create a draft; refusing asset upload")
     try:
@@ -485,8 +566,7 @@ def publish(assets: Path, manifest: dict[str, Any], metadata: dict[str, Any], gi
     published = github.publish(release["id"], prerelease=is_candidate)
     if published["draft"] or published["prerelease"] != is_candidate:
         raise PublishError("Release was not published in the expected stable/candidate state")
-    return {"status": "candidate" if is_candidate else "published",
-            "release_url": published["html_url"], "tag": published["tag_name"]}
+    return {"status": "candidate" if is_candidate else "published", "release_url": published["html_url"], "tag": published["tag_name"]}
 
 
 def main() -> None:
@@ -512,22 +592,18 @@ def main() -> None:
     candidate, assets = Path(args.input), Path(args.output)
     github = GitHub(repository, os.environ.get("GITHUB_TOKEN", ""))
     latest = None if args.dry_run else github.latest()
-    allow_initial = initial_baseline_allowed(latest,
-        os.environ.get("RESET_BASELINE", "false").lower() == "true", os.environ["GITHUB_EVENT_NAME"])
-    manifest = verify_candidate(candidate, Path(args.root).resolve(), commit,
-                                allow_initial_baseline=allow_initial, allow_offline=args.dry_run)
+    allow_initial = initial_baseline_allowed(latest, os.environ.get("RESET_BASELINE", "false").lower() == "true", os.environ["GITHUB_EVENT_NAME"])
+    manifest = verify_candidate(candidate, Path(args.root).resolve(), commit, allow_initial_baseline=allow_initial, allow_offline=args.dry_run)
     if args.dry_run:
         logger.info(json.dumps({"status": "dry-run", "validated": True, "domains": manifest["output"]["total_conditions"]}))
         return
     if manifest["validation"]["baseline"] == "first-build":
         logger.info("Initial baseline accepted: first release or explicitly requested manual reset.")
 
-    metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt,
-                              previous_release_tag=latest.get("tag_name") if latest else None)
+    metadata = prepare_assets(candidate, assets, manifest, repository, run_id, attempt, previous_release_tag=latest.get("tag_name") if latest else None)
     is_candidate = manifest["validation"]["baseline"] == "large-change-candidate"
-    date_part = manifest['built_at'][:10].replace('-', '.')
-    tag = (f"candidate-{date_part}-{run_id}-{attempt}" if is_candidate
-           else f"v{date_part}-{run_id}-{attempt}")
+    date_part = manifest["built_at"][:10].replace("-", ".")
+    tag = f"candidate-{date_part}-{run_id}-{attempt}" if is_candidate else f"v{date_part}-{run_id}-{attempt}"
     result = publish(assets, manifest, metadata, github, tag)
     if args.keep_releases and result["status"] == "published":
         current = github.latest()
@@ -552,7 +628,9 @@ def releases_to_prune(releases: list[dict[str, Any]], latest_id: int | None, kee
 
 def retention_main() -> None:
     configure_logging()
-    parser = argparse.ArgumentParser(description="Delete old GitHub releases, keeping the newest N and always protecting Latest. Dry-run unless --apply is passed.")
+    parser = argparse.ArgumentParser(
+        description="Delete old GitHub releases, keeping the newest N and always protecting Latest. Dry-run unless --apply is passed."
+    )
     parser.add_argument("--keep", type=int, default=5, help="How many newest published releases to keep (default: 5)")
     parser.add_argument("--apply", action="store_true", help="Actually delete releases; without it only prints what would be deleted")
     args = parser.parse_args()
@@ -569,14 +647,12 @@ def retention_main() -> None:
         logger.info(f"{action}: {release['tag_name']} (id={release['id']}, published_at={release.get('published_at')})")
         if args.apply:
             github.delete_release(release["id"], release.get("tag_name"))
-    logger.info(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0,
-                      "would_delete": len(to_delete)}))
+    logger.info(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(to_delete) if args.apply else 0, "would_delete": len(to_delete)}))
 
 
 def prune_orphan_tags_main() -> None:
     configure_logging()
-    parser = argparse.ArgumentParser(
-        description="Delete project-owned git tags that no longer have a release. Dry-run unless --apply is passed.")
+    parser = argparse.ArgumentParser(description="Delete project-owned git tags that no longer have a release. Dry-run unless --apply is passed.")
     parser.add_argument("--apply", action="store_true", help="Actually delete orphan tags")
     args = parser.parse_args()
     repository = os.environ["GITHUB_REPOSITORY"]
@@ -589,8 +665,7 @@ def prune_orphan_tags_main() -> None:
         logger.info("%s: %s", "deleting" if args.apply else "would delete", tag)
         if args.apply:
             github.delete_tag(tag)
-    logger.info(json.dumps({"status": "applied" if args.apply else "dry-run",
-                            "deleted": len(orphans) if args.apply else 0, "would_delete": len(orphans)}))
+    logger.info(json.dumps({"status": "applied" if args.apply else "dry-run", "deleted": len(orphans) if args.apply else 0, "would_delete": len(orphans)}))
 
 
 if __name__ == "__main__":

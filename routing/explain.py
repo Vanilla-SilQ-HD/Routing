@@ -4,6 +4,7 @@ Reads the manifest and the per-set JSON files produced by the build (locally or
 from a release directory) and reports the matched rule, its sources and any
 Direct exception. No network access is required for a local build directory.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -73,8 +74,7 @@ def explain(build_dir: Path, domain: str) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("domain", help="Domain to explain, e.g. example.com")
-    parser.add_argument("--build-dir", type=Path, default=Path("dist"),
-                        help="Directory with manifest.json and the per-set JSON files")
+    parser.add_argument("--build-dir", type=Path, default=Path("dist"), help="Directory with manifest.json and the per-set JSON files")
     parser.add_argument("--json", action="store_true", help="Print the raw JSON result")
     args = parser.parse_args()
     try:

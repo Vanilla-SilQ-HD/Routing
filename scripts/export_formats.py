@@ -4,6 +4,7 @@ Reads the per-set JSON files produced by the build and writes dnsmasq, ipset,
 AdGuard Home and mihomo views into an output directory. These are derived
 exports; the canonical SRS sets remain the source of truth.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,8 +67,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=Path("dist"))
     parser.add_argument("--output", type=Path, default=Path("dist/formats"))
-    parser.add_argument("--adguard-dns", default="https://dns.cloudflare.com/dns-query",
-                        help="Upstream used in AdGuard per-domain rules (e.g. your DoH-in-VPN)")
+    parser.add_argument(
+        "--adguard-dns", default="https://dns.cloudflare.com/dns-query", help="Upstream used in AdGuard per-domain rules (e.g. your DoH-in-VPN)"
+    )
     args = parser.parse_args()
     written = export(args.build_dir, args.output, args.adguard_dns)
     print(json.dumps({"exported": len(written), "output": str(args.output)}, ensure_ascii=False))

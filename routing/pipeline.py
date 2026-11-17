@@ -1,4 +1,5 @@
 """Pure domain stages used by the build pipeline."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -55,14 +56,15 @@ class DomainSets:
 
 
 def parse_domains(
-    sources: list[dict[str, Any]], fetched: dict[str, Any], max_invalid_fraction: float,
+    sources: list[dict[str, Any]],
+    fetched: dict[str, Any],
+    max_invalid_fraction: float,
     parse_source: Callable[..., tuple[set[str], set[str], dict[str, Any]]],
 ) -> ParsedDomains:
     parsed_sources = []
     for source in sources:
         ip_networks: set[Any] = set()
-        exact, suffix, parsed = parse_source(
-            fetched[source["id"]][0], source, max_invalid_fraction, ip_networks)
+        exact, suffix, parsed = parse_source(fetched[source["id"]][0], source, max_invalid_fraction, ip_networks)
         metadata = dict(fetched[source["id"]][1], **parsed, description=source["description"])
         if "caveat" in source:
             metadata["caveat"] = source["caveat"]
@@ -70,8 +72,14 @@ def parse_domains(
     return ParsedDomains(tuple(parsed_sources))
 
 
-def apply_policy(parsed: ParsedDomains, sources_config: dict[str, Any], policy: dict[str, Any],
-                 psl: PublicSuffixes, manual_exact: dict[str, Any], manual_suffix: dict[str, Any]) -> DomainPolicy:
+def apply_policy(
+    parsed: ParsedDomains,
+    sources_config: dict[str, Any],
+    policy: dict[str, Any],
+    psl: PublicSuffixes,
+    manual_exact: dict[str, Any],
+    manual_suffix: dict[str, Any],
+) -> DomainPolicy:
     exact: dict[str, int] = {}
     suffix: dict[str, int] = {}
     core_exact: dict[str, int] = {}
@@ -110,17 +118,16 @@ def apply_policy(parsed: ParsedDomains, sources_config: dict[str, Any], policy: 
         stats.append(metadata)
         skipped += rejected_here
     manual_index = len(parsed.sources)
-    for manual_names, merged in ((manual_exact, exact), (manual_suffix, suffix),
-                                 (manual_exact, core_exact), (manual_suffix, core_suffix)):
+    for manual_names, merged in ((manual_exact, exact), (manual_suffix, suffix), (manual_exact, core_exact), (manual_suffix, core_suffix)):
         for name in manual_names:
             merged[name] = SourceSet(merged.get(name, 0)).add(manual_index).mask
     total_conditions += len(manual_exact) + len(manual_suffix)
-    return DomainPolicy(exact, suffix, core_exact, core_suffix, exclusions, stats, registry_ips,
-                        total_conditions, skipped, core_excluded, shared, service_owned)
+    return DomainPolicy(
+        exact, suffix, core_exact, core_suffix, exclusions, stats, registry_ips, total_conditions, skipped, core_excluded, shared, service_owned
+    )
 
 
-def minimize_domains(selected: DomainPolicy, psl: PublicSuffixes, popular: set[str],
-                     minimum_output_domains: int, manual_suffix: dict[str, Any]) -> DomainSets:
+def minimize_domains(selected: DomainPolicy, psl: PublicSuffixes, popular: set[str], minimum_output_domains: int, manual_suffix: dict[str, Any]) -> DomainSets:
     original_exact, original_suffix = selected.exact, selected.suffix
     before_minimize = len(original_exact) + len(original_suffix)
     exact, suffix = minimize(original_exact, original_suffix)
@@ -147,5 +154,4 @@ def minimize_domains(selected: DomainPolicy, psl: PublicSuffixes, popular: set[s
     for names in (original_exact, original_suffix):
         if any(not match_rule(name, exact, suffix) for name in names):
             raise ValueError("Minimization lost an input condition")
-    return DomainSets(exact, suffix, core_exact, core_suffix, smart_exact, smart_suffix,
-                      original_exact, original_suffix, popular, before_minimize, count)
+    return DomainSets(exact, suffix, core_exact, core_suffix, smart_exact, smart_suffix, original_exact, original_suffix, popular, before_minimize, count)

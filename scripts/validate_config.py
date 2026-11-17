@@ -1,4 +1,5 @@
 """Validate every tracked configuration file against its local JSON Schema."""
+
 from __future__ import annotations
 
 import argparse

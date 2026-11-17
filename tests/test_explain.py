@@ -22,10 +22,16 @@ class ExplainTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.dir = Path(self.temp.name)
-        (self.dir / "manifest.json").write_text(json.dumps({
-            "built_at": "2026-11-13T00:00:00+00:00", "sources": [],
-            "direct_exceptions": {"rules": [{"domain": "ok.ru", "reason": "available in RU", "review_after": "2027-01-01"}]},
-        }), encoding="utf-8")
+        (self.dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "built_at": "2026-11-13T00:00:00+00:00",
+                    "sources": [],
+                    "direct_exceptions": {"rules": [{"domain": "ok.ru", "reason": "available in RU", "review_after": "2027-01-01"}]},
+                }
+            ),
+            encoding="utf-8",
+        )
         write_rules(self.dir / "blocked-domains.json", domains=["exact.example"], suffixes=["blocked.example"])
         write_rules(self.dir / "blocked-domains-core.json", domains=["exact.example", "ok.ru"])
         write_rules(self.dir / "blocked-domains-smart.json", domains=["exact.example", "ok.ru"], suffixes=["blocked.example"])
@@ -60,9 +66,14 @@ class ExplainTests(unittest.TestCase):
         self.assertEqual(result["source_attribution"], "unavailable")
 
     def test_source_attribution_from_probe(self):
-        (self.dir / "probes.json").write_text(json.dumps([
-            {"domain": "exact.example", "sources": ["example-source"]},
-        ]), encoding="utf-8")
+        (self.dir / "probes.json").write_text(
+            json.dumps(
+                [
+                    {"domain": "exact.example", "sources": ["example-source"]},
+                ]
+            ),
+            encoding="utf-8",
+        )
         result = explain(self.dir, "exact.example")
         self.assertEqual(result["sources"], ["example-source"])
         self.assertEqual(result["source_attribution"], "probe")

@@ -52,33 +52,40 @@ class ToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "config").mkdir()
-            lock = {"sing_box_version": "1.14.4", "assets": {"linux-amd64": {
-                "url": "https://github.com/compiler.tar.gz", "sha256": hashlib.sha256(data).hexdigest(), "member": "sing-box"}}}
+            lock = {
+                "sing_box_version": "1.14.4",
+                "assets": {"linux-amd64": {"url": "https://github.com/compiler.tar.gz", "sha256": hashlib.sha256(data).hexdigest(), "member": "sing-box"}},
+            }
             (root / "config/tools-lock.json").write_text(json.dumps(lock), encoding="utf-8")
-            with patch.object(install_tools, "ROOT", root), \
-                    patch("install_tools.platform.system", return_value="linux"), \
-                    patch("install_tools.platform.machine", return_value="x86_64"), \
-                    patch("install_tools.urllib.request.build_opener", return_value=FakeOpener(data)):
+            with (
+                patch.object(install_tools, "ROOT", root),
+                patch("install_tools.platform.system", return_value="linux"),
+                patch("install_tools.platform.machine", return_value="x86_64"),
+                patch("install_tools.urllib.request.build_opener", return_value=FakeOpener(data)),
+            ):
                 install_tools.main()
             self.assertEqual((root / ".tools/sing-box").read_bytes(), b"compiler")
-            with patch.object(install_tools, "ROOT", root), \
-                    patch("install_tools.platform.system", return_value="linux"), \
-                    patch("install_tools.platform.machine", return_value="x86_64"), \
-                    patch("install_tools.urllib.request.build_opener", return_value=FakeOpener(data + b"corrupt")), self.assertRaises(SystemExit):
+            with (
+                patch.object(install_tools, "ROOT", root),
+                patch("install_tools.platform.system", return_value="linux"),
+                patch("install_tools.platform.machine", return_value="x86_64"),
+                patch("install_tools.urllib.request.build_opener", return_value=FakeOpener(data + b"corrupt")),
+                self.assertRaises(SystemExit),
+            ):
                 install_tools.main()
 
     def test_linux_rss_is_read_from_proc(self):
         process = type("Process", (), {"pid": 123})()
-        with patch("measure_memory.os.name", "posix"), \
-                patch("measure_memory.Path.read_text", return_value="Name:\tsing-box\nVmRSS:\t  456 kB\n"):
+        with patch("measure_memory.os.name", "posix"), patch("measure_memory.Path.read_text", return_value="Name:\tsing-box\nVmRSS:\t  456 kB\n"):
             self.assertEqual(measure_memory.rss_bytes(process), 456 * 1024)
 
     def test_awg_output_validation_rejects_bad_presets(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "catalog.json").write_text(json.dumps({"sources": [
-                {"id": "routing", "url": "https://example.com/{}", "names": sorted(validate_awg_outputs.EXPECTED_DATASETS)}
-            ]}), encoding="utf-8")
+            (root / "catalog.json").write_text(
+                json.dumps({"sources": [{"id": "routing", "url": "https://example.com/{}", "names": sorted(validate_awg_outputs.EXPECTED_DATASETS)}]}),
+                encoding="utf-8",
+            )
             (root / "presets.user.json").write_text(json.dumps({"presets": []}), encoding="utf-8")
             with self.assertRaises(validate_awg_outputs.AWGOutputError):
                 validate_awg_outputs.validate_outputs(root)
@@ -90,12 +97,13 @@ class ToolTests(unittest.TestCase):
             candidate.mkdir()
             for name in publish_release.BUILD_FILES:
                 (candidate / name).write_bytes(b"fixture")
-            manifest = {"built_at": "2026-11-13T00:00:00+00:00",
-                        "configuration_sha256": {},
-                        "environment": {"github_commit": "a" * 40},
-                        "output": {"files": {name + ".srs": "0" * 64 for name in publish_release.DATASETS}}}
-            metadata = publish_release.prepare_assets(candidate, root / "release", manifest, "owner/Routing", "1", "1",
-                                                     previous_release_tag="rules-old")
+            manifest = {
+                "built_at": "2026-11-13T00:00:00+00:00",
+                "configuration_sha256": {},
+                "environment": {"github_commit": "a" * 40},
+                "output": {"files": {name + ".srs": "0" * 64 for name in publish_release.DATASETS}},
+            }
+            metadata = publish_release.prepare_assets(candidate, root / "release", manifest, "owner/Routing", "1", "1", previous_release_tag="rules-old")
             self.assertEqual(metadata["previous_release_tag"], "rules-old")
             saved = json.loads((root / "release/release.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["previous_release_tag"], "rules-old")

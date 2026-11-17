@@ -35,9 +35,11 @@ class PromoteCandidateTests(unittest.TestCase):
                 return Response({"id": 42, "prerelease": prerelease})
             return Response({"tag_name": tag, "html_url": "https://example.org/release"})
 
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "test", "TAG": tag}), patch.object(
-            urllib.request, "build_opener"
-        ) as build_opener, contextlib.redirect_stdout(io.StringIO()):
+        with (
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "test", "TAG": tag}),
+            patch.object(urllib.request, "build_opener") as build_opener,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             build_opener.return_value.open.side_effect = open_request
             try:
                 exec(compile(script, "promote_candidate.yml", "exec"), {})
@@ -49,10 +51,13 @@ class PromoteCandidateTests(unittest.TestCase):
         tag = "candidate-2026.11.20-123-1"
         calls, error = self.run_workflow(tag)
         self.assertIsNone(error)
-        self.assertEqual(calls, [
-            ("GET", f"https://api.github.com/repos/owner/repo/releases/tags/{tag}", None),
-            ("PATCH", "https://api.github.com/repos/owner/repo/releases/42", {"prerelease": False, "make_latest": "true"}),
-        ])
+        self.assertEqual(
+            calls,
+            [
+                ("GET", f"https://api.github.com/repos/owner/repo/releases/tags/{tag}", None),
+                ("PATCH", "https://api.github.com/repos/owner/repo/releases/42", {"prerelease": False, "make_latest": "true"}),
+            ],
+        )
 
     def test_rejects_non_candidate_tag(self):
         calls, error = self.run_workflow("v1")

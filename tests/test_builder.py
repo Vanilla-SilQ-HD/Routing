@@ -21,7 +21,20 @@ class DomainSemanticsTests(unittest.TestCase):
         self.assertEqual(normalize_domain("WWW.Example.com"), "www.example.com")
 
     def test_urls_ips_invalid_wildcards_and_injection_are_rejected(self):
-        for value in ["https://a.example", "1.1.1.1", "a.example/path", "a.example:443", "*.example", "-bad.example", "a..example", "a.example..", "a@example.com", "a\n.example", "<script>", ""]:
+        for value in [
+            "https://a.example",
+            "1.1.1.1",
+            "a.example/path",
+            "a.example:443",
+            "*.example",
+            "-bad.example",
+            "a..example",
+            "a.example..",
+            "a@example.com",
+            "a\n.example",
+            "<script>",
+            "",
+        ]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 normalize_domain(value)
 
@@ -89,7 +102,13 @@ class InputFailureTests(unittest.TestCase):
         self.assertEqual(suffix, {"b.example"})
 
     def test_logical_ip_and_port_rules_are_never_silently_flattened(self):
-        for rule in [{"ip_cidr": ["1.1.1.1/32"]}, {"domain_suffix": ["a.example"], "port": [443]}, {"type": "logical", "mode": "or", "rules": []}, {}, {"domain_suffix": []}]:
+        for rule in [
+            {"ip_cidr": ["1.1.1.1/32"]},
+            {"domain_suffix": ["a.example"], "port": [443]},
+            {"type": "logical", "mode": "or", "rules": []},
+            {},
+            {"domain_suffix": []},
+        ]:
             with self.subTest(rule=rule), self.assertRaises(build.BuildError):
                 self.parse({"version": 3, "rules": [rule]})
 
@@ -109,8 +128,7 @@ class InputFailureTests(unittest.TestCase):
             path = Path(temporary) / "mixed.data"
             path.write_text("a.example\n1.1.1.1\n2606:4700:4700::1111\n10.0.0.1\n_bad.example\n1.1.1.1\n", encoding="utf-8")
             networks = set()
-            _exact, suffix, stats = build.parse_source(
-                path, {"id": "fixture", "format": "suffix-lines", "min_entries": 1}, 1, networks)
+            _exact, suffix, stats = build.parse_source(path, {"id": "fixture", "format": "suffix-lines", "min_entries": 1}, 1, networks)
         self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32", "2606:4700:4700::1111/128"})
         self.assertEqual(suffix, {"a.example"})
         self.assertEqual(stats["ip_records"], 3)
@@ -128,13 +146,16 @@ class InputFailureTests(unittest.TestCase):
 
     def _write_cache(self, path, body=b"line\n", etag='"v1"', last_modified="Mon, 01 Jan 2026 00:00:00 GMT"):
         import hashlib
+
         (path / "fixture.data").write_bytes(body)
-        build.write_json(path / "fixture.metadata.json", {
-            "id": "fixture", "url": "https://example.com/data", "sha256": hashlib.sha256(body).hexdigest(),
-            "etag": etag, "last_modified": last_modified})
+        build.write_json(
+            path / "fixture.metadata.json",
+            {"id": "fixture", "url": "https://example.com/data", "sha256": hashlib.sha256(body).hexdigest(), "etag": etag, "last_modified": last_modified},
+        )
 
     def test_conditional_get_reuses_verified_cache_on_304(self):
         import urllib.error
+
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
             self._write_cache(path)
@@ -165,15 +186,14 @@ class InputFailureTests(unittest.TestCase):
 
     def test_retry_after_is_honoured_on_429(self):
         import urllib.error
+
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
             source = {"id": "fixture", "url": "https://example.com/data", "max_bytes": 1000}
             headers = {"Retry-After": "7"}
             error = urllib.error.HTTPError(source["url"], 429, "Too Many", headers, None)
             sleeps = []
-            with patch("urllib.request.build_opener") as opener, \
-                    patch("time.sleep", side_effect=sleeps.append), \
-                    self.assertRaises(build.BuildError):
+            with patch("urllib.request.build_opener") as opener, patch("time.sleep", side_effect=sleeps.append), self.assertRaises(build.BuildError):
                 opener.return_value.open.side_effect = error
                 build.fetch_source(source, path, network={"retries": 2})
             self.assertEqual(sleeps, [7.0])
@@ -184,9 +204,13 @@ class ManualAndDiffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "manual.json"
             psl = PublicSuffixes("com\n")
-            build.write_json(path, {"schema_version": 1, "rules": [
-                {"kind": "domain_suffix", "domain": "Example.COM", "reason": "reviewed service", "review_after": "2027-01-01"}
-            ]})
+            build.write_json(
+                path,
+                {
+                    "schema_version": 1,
+                    "rules": [{"kind": "domain_suffix", "domain": "Example.COM", "reason": "reviewed service", "review_after": "2027-01-01"}],
+                },
+            )
             exact, suffix, _, records = build.read_manual_rules(path, psl, require_review=True)
             self.assertFalse(exact)
             self.assertEqual(set(suffix), {"example.com"})
@@ -204,18 +228,18 @@ class ManualAndDiffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "direct.json"
             psl = PublicSuffixes("com\n")
-            build.write_json(path, {"schema_version": 1, "rules": [
-                {"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "direct resolver", "review_after": "2027-01-01"}
-            ]})
+            build.write_json(
+                path, {"schema_version": 1, "rules": [{"kind": "ip_cidr", "domain": "1.1.1.1/32", "reason": "direct resolver", "review_after": "2027-01-01"}]}
+            )
             exact, suffix, networks, records = build.read_manual_rules(path, psl, require_review=True, allow_ip=True)
             self.assertFalse(exact)
             self.assertFalse(suffix)
             self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32"})
             self.assertEqual(records[0]["domain"], "1.1.1.1/32")
             for value in ["10.0.0.0/8", "1.1.1.0/24"]:
-                build.write_json(path, {"schema_version": 1, "rules": [
-                    {"kind": "ip_cidr", "domain": value, "reason": "invalid", "review_after": "2027-01-01"}
-                ]})
+                build.write_json(
+                    path, {"schema_version": 1, "rules": [{"kind": "ip_cidr", "domain": value, "reason": "invalid", "review_after": "2027-01-01"}]}
+                )
                 with self.subTest(value=value), self.assertRaises(build.BuildError):
                     build.read_manual_rules(path, psl, require_review=True, allow_ip=True)
 
@@ -228,10 +252,8 @@ class ManualAndDiffTests(unittest.TestCase):
             with self.assertRaisesRegex(build.BuildError, "only for Direct"):
                 build.read_manual_rules(path, psl)
             with self.assertRaisesRegex(build.BuildError, "overdue"):
-                build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
-                                        now=dt.date(2027, 1, 2))
-            build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
-                                    now=dt.date(2027, 1, 1))
+                build.read_manual_rules(path, psl, require_review=True, allow_ip=True, now=dt.date(2027, 1, 2))
+            build.read_manual_rules(path, psl, require_review=True, allow_ip=True, now=dt.date(2027, 1, 1))
 
     def test_overdue_direct_rule_is_only_a_warning_in_non_strict_mode(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -241,18 +263,15 @@ class ManualAndDiffTests(unittest.TestCase):
             build.write_json(path, {"schema_version": 1, "rules": [rule]})
             warnings: list = []
             # Non-strict (scheduled) mode collects a warning instead of raising.
-            build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
-                                    now=dt.date(2027, 1, 2), strict_review=False, review_warnings=warnings)
+            build.read_manual_rules(path, psl, require_review=True, allow_ip=True, now=dt.date(2027, 1, 2), strict_review=False, review_warnings=warnings)
             self.assertEqual(len(warnings), 1)
             self.assertIn("overdue", warnings[0])
             # Strict (PR/push) mode still raises.
             with self.assertRaisesRegex(build.BuildError, "overdue"):
-                build.read_manual_rules(path, psl, require_review=True, allow_ip=True,
-                                        now=dt.date(2027, 1, 2), strict_review=True)
+                build.read_manual_rules(path, psl, require_review=True, allow_ip=True, now=dt.date(2027, 1, 2), strict_review=True)
 
     def test_semantic_diff_distinguishes_minimization_from_lost_coverage(self):
-        previous = {"version": 3, "rules": [{"domain": ["same.example", "old.other"],
-                                             "domain_suffix": ["child.example"]}]}
+        previous = {"version": 3, "rules": [{"domain": ["same.example", "old.other"], "domain_suffix": ["child.example"]}]}
         exact = {"same.example": 0, "new.example": 1}
         suffix = {"example": 1}
         diff = build.make_domain_diff(previous, exact, suffix, exact, suffix, [{"id": "manual"}])
@@ -263,14 +282,18 @@ class ManualAndDiffTests(unittest.TestCase):
         self.assertEqual(diff["effective_added"], 2)
 
     def test_exact_registry_ips_never_merge_into_subnets(self):
-        networks = build.exact_networks([
-            ipaddress.ip_network("1.1.1.1/32"), ipaddress.ip_network("1.1.1.2/32"),
-            ipaddress.ip_network("1.1.1.1/32"), ipaddress.ip_network("2001:db8::1/128"),
-        ])
+        networks = build.exact_networks(
+            [
+                ipaddress.ip_network("1.1.1.1/32"),
+                ipaddress.ip_network("1.1.1.2/32"),
+                ipaddress.ip_network("1.1.1.1/32"),
+                ipaddress.ip_network("2001:db8::1/128"),
+            ]
+        )
         self.assertEqual({str(n) for n in networks}, {"1.1.1.1/32", "1.1.1.2/32", "2001:db8::1/128"})
 
     def test_registry_drift_uses_actual_addresses(self):
-        policy = {"validation": {"registry_ip": {"max_drop_fraction": .25, "max_growth_fraction": .5}}}
+        policy = {"validation": {"registry_ip": {"max_drop_fraction": 0.25, "max_growth_fraction": 0.5}}}
         previous = {"registry_ip": {"output": {"prefixes": ["1.1.1.1/32", "8.8.8.8/32"]}}}
         current = [ipaddress.ip_network(value) for value in ("1.1.1.1/32", "8.8.8.8/32", "9.9.9.9/32")]
         self.assertEqual(build.validate_registry(previous, current, policy)["added"], 1)
@@ -278,11 +301,14 @@ class ManualAndDiffTests(unittest.TestCase):
             build.validate_registry(previous, [ipaddress.ip_network("1.1.1.1/32")], policy)
 
     def test_only_the_legacy_registry_layout_gets_a_new_baseline(self):
-        policy = {"validation": {"registry_ip": {"max_drop_fraction": .25, "max_growth_fraction": .5}}}
-        previous = {"registry_cidr": None, "registry_ip": {
-            "sources": [{"id": "antifilter-full"}, {"id": "refilter"}],
-            "output": {"prefixes": ["1.1.1.1/32"]},
-        }}
+        policy = {"validation": {"registry_ip": {"max_drop_fraction": 0.25, "max_growth_fraction": 0.5}}}
+        previous = {
+            "registry_cidr": None,
+            "registry_ip": {
+                "sources": [{"id": "antifilter-full"}, {"id": "refilter"}],
+                "output": {"prefixes": ["1.1.1.1/32"]},
+            },
+        }
         current = [ipaddress.ip_network(f"10.{index}.0.1/32") for index in range(100)]
         result = build.validate_registry(previous, current, policy)
         self.assertEqual(result["baseline"], "first-registry-build")
@@ -294,8 +320,21 @@ class ManualAndDiffTests(unittest.TestCase):
 class BaselineGuardTests(unittest.TestCase):
     def setUp(self):
         self.now = dt.datetime(2026, 11, 6, tzinfo=dt.UTC)
-        self.policy = {"validation": {"max_previous_age_days": 7, "max_source_drop_fraction": .2, "max_source_growth_fraction": .5, "max_output_drop_fraction": .2, "max_output_growth_fraction": .5}}
-        self.previous = {"schema_version": 1, "built_at": self.now.isoformat(), "sources": [{"id": "a", "unique_conditions": 1000}], "output": {"total_conditions": 1000}}
+        self.policy = {
+            "validation": {
+                "max_previous_age_days": 7,
+                "max_source_drop_fraction": 0.2,
+                "max_source_growth_fraction": 0.5,
+                "max_output_drop_fraction": 0.2,
+                "max_output_growth_fraction": 0.5,
+            }
+        }
+        self.previous = {
+            "schema_version": 1,
+            "built_at": self.now.isoformat(),
+            "sources": [{"id": "a", "unique_conditions": 1000}],
+            "output": {"total_conditions": 1000},
+        }
 
     def validate(self, count=1001, stats=None, previous=None):
         return build.validate_previous(previous or self.previous, stats or [{"id": "a", "unique_conditions": count}], count, self.policy, self.now)
@@ -325,21 +364,18 @@ class BaselineGuardTests(unittest.TestCase):
     def test_large_growth_is_staged_only_when_explicitly_allowed(self):
         # By default a large growth is fatal (guarded above). With the opt-in flag it
         # becomes a review candidate instead of an error.
-        result = build.validate_previous(self.previous, [{"id": "a", "unique_conditions": 5000}],
-                                         5000, self.policy, self.now, allow_large_change=True)
+        result = build.validate_previous(self.previous, [{"id": "a", "unique_conditions": 5000}], 5000, self.policy, self.now, allow_large_change=True)
         self.assertEqual(result["baseline"], "large-change-candidate")
         self.assertTrue(any("Large coverage growth" in w for w in result["warnings"]))
         # A drop is fatal even with the flag: it may hide lost coverage.
         with self.assertRaises(build.BuildError):
-            build.validate_previous(self.previous, [{"id": "a", "unique_conditions": 100}],
-                                    100, self.policy, self.now, allow_large_change=True)
+            build.validate_previous(self.previous, [{"id": "a", "unique_conditions": 100}], 100, self.policy, self.now, allow_large_change=True)
 
 
 class AWGPresetTests(unittest.TestCase):
     def test_vpn_presets_never_route_direct_exceptions_to_vpn(self):
         presets = build.make_presets("https://example.com/")["presets"]
-        self.assertEqual({item["id"] for item in presets},
-                         {"routing-full", "routing-compact", "routing-smart", "routing-wide-cidr"})
+        self.assertEqual({item["id"] for item in presets}, {"routing-full", "routing-compact", "routing-smart", "routing-wide-cidr"})
         by_id = {item["id"]: {r["tag"] for r in item["engines"]["singbox"]["ruleSets"]} for item in presets}
         self.assertEqual(by_id["routing-full"], {"routing", "routing-services", "routing-registry-ip"})
         self.assertEqual(by_id["routing-compact"], {"routing-core", "routing-services", "routing-registry-ip"})
@@ -385,6 +421,7 @@ class SmartProfileTests(unittest.TestCase):
     def test_zip_member_is_extracted_and_hashed(self):
         import hashlib
         import zipfile
+
         with tempfile.TemporaryDirectory() as temporary:
             archive = Path(temporary) / "src.zip"
             target = Path(temporary) / "out.data"

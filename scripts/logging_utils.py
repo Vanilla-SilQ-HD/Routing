@@ -1,4 +1,5 @@
 """Shared logging configuration for command-line tools."""
+
 from __future__ import annotations
 
 import logging

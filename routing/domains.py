@@ -3,6 +3,7 @@
 Pure functions with no network or filesystem access, shared by the build and by
 any external consumer that needs to reason about routing rules.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -104,7 +105,7 @@ class PublicSuffixes:
 def parents(name: str) -> Iterator[str]:
     offset = name.find(".")
     while offset >= 0:
-        yield name[offset + 1:]
+        yield name[offset + 1 :]
         offset = name.find(".", offset + 1)
 
 

@@ -1,4 +1,5 @@
 """Create a reviewed-rule candidate from an unrouted-resource issue."""
+
 from __future__ import annotations
 
 import argparse
@@ -34,7 +35,7 @@ def sections(body: str) -> dict[str, str]:
     result = {}
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
-        result[match.group(1).strip().lower()] = body[match.end():end].strip()
+        result[match.group(1).strip().lower()] = body[match.end() : end].strip()
     return result
 
 
@@ -71,16 +72,20 @@ def candidate_from_issue(issue: dict[str, Any]) -> dict[str, str]:
 
 def markdown(candidate: dict[str, str], issue: dict[str, Any]) -> str:
     if expected_route(issue) == "vpn" and candidate["kind"] == "ip_cidr":
-        body = (f"Точный IP `{candidate['domain']}` требует ручной проверки: автоматическое добавление "
-                f"IP-адресов в VPN-набор не поддерживается. После подтверждения владельца сети и маршрута "
-                f"добавьте адрес вручную с причиной и датой пересмотра.\n\n"
-                f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
-                f"Источник: {issue['html_url']}\n")
+        body = (
+            f"Точный IP `{candidate['domain']}` требует ручной проверки: автоматическое добавление "
+            f"IP-адресов в VPN-набор не поддерживается. После подтверждения владельца сети и маршрута "
+            f"добавьте адрес вручную с причиной и датой пересмотра.\n\n"
+            f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
+            f"Источник: {issue['html_url']}\n"
+        )
         return COMMENT_MARKER + "\n" + body
     target = "direct-exceptions" if expected_route(issue) == "direct" else "manual-vpn"
-    body = (f"Кандидат для `config/{target}.json`. Проверьте ресурс перед публикацией.\n\n"
-            f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
-            f"Источник: {issue['html_url']}\n")
+    body = (
+        f"Кандидат для `config/{target}.json`. Проверьте ресурс перед публикацией.\n\n"
+        f"```json\n{json.dumps(candidate, ensure_ascii=False, indent=2)}\n```\n\n"
+        f"Источник: {issue['html_url']}\n"
+    )
     return COMMENT_MARKER + "\n" + body
 
 
@@ -116,8 +121,7 @@ def main() -> None:
     if args.comment:
         repository = os.environ["GITHUB_REPOSITORY"]
         token = os.environ["GITHUB_TOKEN"]
-        headers = {"Authorization": "Bearer " + token,
-                   "Accept": "application/vnd.github+json", "User-Agent": "Routing-Issue-Bot"}
+        headers = {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json", "User-Agent": "Routing-Issue-Bot"}
         base = f"https://api.github.com/repos/{repository}"
         existing_id = find_bot_comment(base, issue["number"], headers)
         if existing_id is not None:
@@ -126,10 +130,7 @@ def main() -> None:
         else:
             url = f"{base}/issues/{issue['number']}/comments"
             method = "POST"
-        request = urllib.request.Request(
-            url,
-            data=json.dumps({"body": comment}, ensure_ascii=False).encode("utf-8"),
-            headers=headers, method=method)
+        request = urllib.request.Request(url, data=json.dumps({"body": comment}, ensure_ascii=False).encode("utf-8"), headers=headers, method=method)
         with urllib.request.build_opener().open(request, timeout=30):
             pass
     logger.info(json.dumps(candidate, ensure_ascii=False))

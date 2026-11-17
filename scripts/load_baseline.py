@@ -2,6 +2,7 @@
 
 GitHub read-only APIs only. No publication and no router access.
 """
+
 import gzip
 import io
 import json
@@ -36,11 +37,15 @@ logger = logging.getLogger(__name__)
 def get(url: str, token: str, as_json: bool = True, limit: int = 4 * 1024 * 1024, octet_stream: bool = False) -> Any:
     if urllib.parse.urlsplit(url).hostname != "api.github.com":
         raise BuildError("Credentials may only be sent to api.github.com")
-    request = urllib.request.Request(url, headers={
-        "Authorization": "Bearer " + token, "User-Agent": "selective-vpn-rules/1",
-        "Accept": "application/octet-stream" if octet_stream else "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    })
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": "Bearer " + token,
+            "User-Agent": "selective-vpn-rules/1",
+            "Accept": "application/octet-stream" if octet_stream else "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
     opener = urllib.request.build_opener(CredentialSafeRedirect())
     with opener.open(request, timeout=120) as response:
         payload = response.read(limit + 1)
@@ -71,8 +76,7 @@ def restore_latest_rules(base: str, token: str) -> None:
     asset = legacy or evidence
     if asset is None:
         return
-    payload = get(base + f"/releases/assets/{int(asset['id'])}", token,
-                  as_json=False, limit=128 * 1024 * 1024, octet_stream=True)
+    payload = get(base + f"/releases/assets/{int(asset['id'])}", token, as_json=False, limit=128 * 1024 * 1024, octet_stream=True)
     if legacy:
         with gzip.GzipFile(fileobj=io.BytesIO(payload)) as compressed:
             rules = compressed.read(512 * 1024 * 1024 + 1)
@@ -115,8 +119,7 @@ def main() -> None:
         for artifact in artifacts:
             if artifact["name"] != "rules-manifest" or artifact["expired"]:
                 continue
-            data = read_manifest_zip(get(base + f"/actions/artifacts/{artifact['id']}/zip", token,
-                                         as_json=False, limit=64 * 1024 * 1024))
+            data = read_manifest_zip(get(base + f"/actions/artifacts/{artifact['id']}/zip", token, as_json=False, limit=64 * 1024 * 1024))
             output = Path("previous/manifest.json")
             output.parent.mkdir(exist_ok=True)
             write_json(output, data)

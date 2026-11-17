@@ -40,52 +40,100 @@ class IntegrationTests(unittest.TestCase):
         data = text.encode("utf-8")
         path = self.root / "cache/sources" / f"{source['id']}.data"
         path.write_bytes(data)
-        metadata = {"id": source["id"], "url": source["url"], "sha256": hashlib.sha256(data).hexdigest(),
-                    "fetched_at": "2026-11-13T00:00:00+00:00"}
+        metadata = {"id": source["id"], "url": source["url"], "sha256": hashlib.sha256(data).hexdigest(), "fetched_at": "2026-11-13T00:00:00+00:00"}
         (self.root / "cache/sources" / f"{source['id']}.metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
 
     def prepare_root(self):
-        domain_source = {"id": "domains", "url": "https://example.com/domains.lst", "format": "suffix-lines",
-                         "min_entries": 1000, "max_bytes": 1000000, "description": "fixture domains"}
-        psl = {"id": "psl", "url": "https://example.com/psl.dat", "min_entries": 2,
-               "max_bytes": 1000, "description": "fixture PSL"}
-        service = {"id": "service", "service": "Fixture", "url": "https://example.com/service.txt",
-                   "reference": "https://example.com", "description": "fixture service", "format": "cidr-lines",
-                   "max_bytes": 1000, "min_entries": 2, "max_entries": 2,
-                   "min_ipv4_entries": 1, "min_ipv6_entries": 1,
-                   "min_ipv4_prefix_length": 20, "min_ipv6_prefix_length": 32,
-                   "max_ipv4_addresses": 1000, "max_ipv6_addresses": 2 ** 100}
-        registry = {"id": "registry", "url": "https://example.com/registry.txt", "format": "cidr-lines",
-                    "min_entries": 1, "max_entries": 10, "max_bytes": 1000,
-                    "min_ipv4_entries": 1, "min_ipv6_entries": 0,
-                    "min_ipv4_prefix_length": 12, "min_ipv6_prefix_length": 32,
-                    "max_ipv4_addresses": 1000, "max_ipv6_addresses": 2 ** 64,
-                    "description": "fixture registry"}
-        self.write_config("sources.json", {"sources": [domain_source], "core_excluded_sources": [],
-                                           "public_suffix_list": psl})
-        self.write_config("service-networks.json", {"schema_version": 1, "sources": [service],
-                                                    "validation": {"max_drop_fraction": 0.25, "max_growth_fraction": 0.5}})
+        domain_source = {
+            "id": "domains",
+            "url": "https://example.com/domains.lst",
+            "format": "suffix-lines",
+            "min_entries": 1000,
+            "max_bytes": 1000000,
+            "description": "fixture domains",
+        }
+        psl = {"id": "psl", "url": "https://example.com/psl.dat", "min_entries": 2, "max_bytes": 1000, "description": "fixture PSL"}
+        service = {
+            "id": "service",
+            "service": "Fixture",
+            "url": "https://example.com/service.txt",
+            "reference": "https://example.com",
+            "description": "fixture service",
+            "format": "cidr-lines",
+            "max_bytes": 1000,
+            "min_entries": 2,
+            "max_entries": 2,
+            "min_ipv4_entries": 1,
+            "min_ipv6_entries": 1,
+            "min_ipv4_prefix_length": 20,
+            "min_ipv6_prefix_length": 32,
+            "max_ipv4_addresses": 1000,
+            "max_ipv6_addresses": 2**100,
+        }
+        registry = {
+            "id": "registry",
+            "url": "https://example.com/registry.txt",
+            "format": "cidr-lines",
+            "min_entries": 1,
+            "max_entries": 10,
+            "max_bytes": 1000,
+            "min_ipv4_entries": 1,
+            "min_ipv6_entries": 0,
+            "min_ipv4_prefix_length": 12,
+            "min_ipv6_prefix_length": 32,
+            "max_ipv4_addresses": 1000,
+            "max_ipv6_addresses": 2**64,
+            "description": "fixture registry",
+        }
+        self.write_config("sources.json", {"sources": [domain_source], "core_excluded_sources": [], "public_suffix_list": psl})
+        self.write_config(
+            "service-networks.json", {"schema_version": 1, "sources": [service], "validation": {"max_drop_fraction": 0.25, "max_growth_fraction": 0.5}}
+        )
         self.write_config("registry-ip-sources.json", {"schema_version": 1, "sources": [registry]})
         self.write_config("manual-vpn.json", {"schema_version": 1, "rules": []})
         self.write_config("direct-exceptions.json", {"schema_version": 1, "rules": []})
-        self.write_config("policy.json", {
-            "schema_version": 1, "shared_roots": {}, "service_owned_suffixes": {},
-            "validation": {"max_invalid_fraction": 0.01, "minimum_output_domains": 1000,
-                           "max_source_drop_fraction": 0.2, "max_source_growth_fraction": 0.5,
-                           "max_output_drop_fraction": 0.2, "max_output_growth_fraction": 0.5,
-                           "max_previous_age_days": 7, "maximum_registry_ips": 100,
-                           "max_service_stale_hours": 24,
-                           "registry_ip": {"max_drop_fraction": 0.25, "max_growth_fraction": 0.5}},
-        })
-        self.write_config("probes.json", {"domains": ["blocked.example", "direct.example"],
-                                          "expectations": {"blocked.example": "VPN", "direct.example": "Direct"}})
-        self.write_config("monitoring.json", {"schema_version": 1,
-                                              "provider": {"name": "fixture", "url": "https://example.com", "country": "RU",
-                                                           "probes_per_target": 1, "timeout_seconds": 1},
-                                              "targets": ["blocked.example"]})
-        popularity = {"id": "tranco", "url": "https://example.com/top-1m.csv.zip", "archive": "zip",
-                      "member": "top-1m.csv", "format": "tranco-csv", "max_bytes": 1000000,
-                      "max_uncompressed_bytes": 1000000, "min_entries": 1, "description": "fixture popularity"}
+        self.write_config(
+            "policy.json",
+            {
+                "schema_version": 1,
+                "shared_roots": {},
+                "service_owned_suffixes": {},
+                "validation": {
+                    "max_invalid_fraction": 0.01,
+                    "minimum_output_domains": 1000,
+                    "max_source_drop_fraction": 0.2,
+                    "max_source_growth_fraction": 0.5,
+                    "max_output_drop_fraction": 0.2,
+                    "max_output_growth_fraction": 0.5,
+                    "max_previous_age_days": 7,
+                    "maximum_registry_ips": 100,
+                    "max_service_stale_hours": 24,
+                    "registry_ip": {"max_drop_fraction": 0.25, "max_growth_fraction": 0.5},
+                },
+            },
+        )
+        self.write_config(
+            "probes.json", {"domains": ["blocked.example", "direct.example"], "expectations": {"blocked.example": "VPN", "direct.example": "Direct"}}
+        )
+        self.write_config(
+            "monitoring.json",
+            {
+                "schema_version": 1,
+                "provider": {"name": "fixture", "url": "https://example.com", "country": "RU", "probes_per_target": 1, "timeout_seconds": 1},
+                "targets": ["blocked.example"],
+            },
+        )
+        popularity = {
+            "id": "tranco",
+            "url": "https://example.com/top-1m.csv.zip",
+            "archive": "zip",
+            "member": "top-1m.csv",
+            "format": "tranco-csv",
+            "max_bytes": 1000000,
+            "max_uncompressed_bytes": 1000000,
+            "min_entries": 1,
+            "description": "fixture popularity",
+        }
         self.write_config("popularity.json", {"schema_version": 1, "max_domains": 100, "source": popularity})
         lock = json.loads((ROOT / "config/tools-lock.json").read_text(encoding="utf-8"))
         self.write_config("tools-lock.json", lock)
@@ -100,9 +148,18 @@ class IntegrationTests(unittest.TestCase):
     def test_offline_build_and_release_dry_run(self):
         self.prepare_root()
         output = self.root / "dist"
-        args = argparse.Namespace(root=str(self.root), offline=True, fetch_only=False, previous=None,
-                                  previous_rules=None, output=str(output), sing_box=str(COMPILER),
-                                  max_workers=1, cache_max_age_days=30, cache_max_bytes=1024 ** 3)
+        args = argparse.Namespace(
+            root=str(self.root),
+            offline=True,
+            fetch_only=False,
+            previous=None,
+            previous_rules=None,
+            output=str(output),
+            sing_box=str(COMPILER),
+            max_workers=1,
+            cache_max_age_days=30,
+            cache_max_bytes=1024**3,
+        )
         with patch.dict(os.environ, {"GITHUB_SHA": COMMIT, "GITHUB_REPOSITORY": "owner/Routing"}, clear=False):
             build.build(args)
         manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
@@ -112,16 +169,34 @@ class IntegrationTests(unittest.TestCase):
             self.assertTrue((output / f"{name}.srs").is_file())
         self.assertEqual(validate_awg_outputs.validate_outputs(output), {"catalog_datasets": 7, "presets": 4})
         import validate_outputs
+
         self.assertEqual(validate_outputs.validate_outputs(output, ROOT / "schemas" / "output"), [])
         verified = publish_release.verify_candidate(output, self.root, COMMIT, allow_initial_baseline=True, allow_offline=True)
         self.assertEqual(verified["environment"]["github_commit"], COMMIT)
 
         environment = dict(os.environ)
-        environment.update({"GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "push",
-                            "GITHUB_REPOSITORY": "owner/Routing", "GITHUB_SHA": COMMIT,
-                            "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_TOKEN": "unused"})
-        command = [sys.executable, str(ROOT / "scripts/publish_release.py"), "--input", str(output),
-                   "--output", str(self.root / "release"), "--root", str(self.root), "--dry-run"]
+        environment.update(
+            {
+                "GITHUB_REF": "refs/heads/main",
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_REPOSITORY": "owner/Routing",
+                "GITHUB_SHA": COMMIT,
+                "GITHUB_RUN_ID": "123",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_TOKEN": "unused",
+            }
+        )
+        command = [
+            sys.executable,
+            str(ROOT / "scripts/publish_release.py"),
+            "--input",
+            str(output),
+            "--output",
+            str(self.root / "release"),
+            "--root",
+            str(self.root),
+            "--dry-run",
+        ]
         with patch.dict(os.environ, environment, clear=True):
             result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -151,6 +226,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("cloudflare.com", errors[0])
         # The real repository configuration must satisfy the invariant.
         import json as _json
+
         real_policy = _json.loads((ROOT / "config/policy.json").read_text(encoding="utf-8"))
         real_probes = _json.loads((ROOT / "config/probes.json").read_text(encoding="utf-8"))
         self.assertEqual(check(real_policy, real_probes), [])
@@ -177,6 +253,7 @@ class IntegrationTests(unittest.TestCase):
         if package_root not in sys.path:
             sys.path.insert(0, package_root)
         import routing
+
         self.assertEqual(routing.normalize_domain("EXAMPLE.COM."), "example.com")
         self.assertTrue(issubclass(routing.BuildError, routing.RoutingError))
         self.assertTrue(issubclass(routing.PublishError, routing.RoutingError))

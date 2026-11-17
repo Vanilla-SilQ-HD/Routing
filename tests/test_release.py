@@ -54,8 +54,7 @@ class FakeGitHub:
         if path.name == self.fail_upload:
             raise PublishError("Simulated upload failure")
         data = path.read_bytes()
-        asset = {"id": len(self.stored) + 1, "state": "uploaded", "size": len(data), "name": path.name,
-                 "digest": "sha256:" + hashlib.sha256(data).hexdigest()}
+        asset = {"id": len(self.stored) + 1, "state": "uploaded", "size": len(data), "name": path.name, "digest": "sha256:" + hashlib.sha256(data).hexdigest()}
         self.stored[asset["id"]] = data
         self.uploaded.append(asset)
         return asset
@@ -66,8 +65,13 @@ class FakeGitHub:
 
     def publish(self, release_id, prerelease=False):
         self.events.append("publish")
-        self.existing = {"draft": False, "prerelease": prerelease, "assets": copy.deepcopy(self.uploaded),
-                         "tag_name": self.tag, "html_url": "https://github.com/owner/Routing/releases/tag/" + self.tag}
+        self.existing = {
+            "draft": False,
+            "prerelease": prerelease,
+            "assets": copy.deepcopy(self.uploaded),
+            "tag_name": self.tag,
+            "html_url": "https://github.com/owner/Routing/releases/tag/" + self.tag,
+        }
         return self.existing
 
     def delete_release(self, release_id, tag=None):
@@ -85,75 +89,117 @@ class ReleaseTests(unittest.TestCase):
         self.candidate = self.root / "candidate"
         self.candidate.mkdir()
         self.commit = "a" * 40
-        recipe_files = {"config/tools-lock.json": json_bytes({"sing_box_version": "1.14.4", "source_format_version": 3}),
-                        "config/policy.json": json_bytes({"validation": {"max_service_stale_hours": 24}}),
-                        "config/registry-ip-sources.json": json_bytes({"sources": [{"id": "registry"}]}),
-                        "scripts/build.py": b"# fixture", "scripts/publish_release.py": b"# fixture",
-                        "requirements.txt": b"", ".github/workflows/build.yml": b"# fixture"}
+        recipe_files = {
+            "config/tools-lock.json": json_bytes({"sing_box_version": "1.14.4", "source_format_version": 3}),
+            "config/policy.json": json_bytes({"validation": {"max_service_stale_hours": 24}}),
+            "config/registry-ip-sources.json": json_bytes({"sources": [{"id": "registry"}]}),
+            "scripts/build.py": b"# fixture",
+            "scripts/publish_release.py": b"# fixture",
+            "requirements.txt": b"",
+            ".github/workflows/build.yml": b"# fixture",
+        }
         for name, data in recipe_files.items():
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
         for name in BUILD_FILES - {"manifest.json"}:
             (self.candidate / name).write_bytes(b"fixture " + name.encode())
-        compiler = {"version": "sing-box version 1.14.4", "source_format_version": 3,
-                    "roundtrip": "passed", "sing_box_check": "passed", "network_service_started": False}
+        compiler = {
+            "version": "sing-box version 1.14.4",
+            "source_format_version": 3,
+            "roundtrip": "passed",
+            "sing_box_check": "passed",
+            "network_service_started": False,
+        }
         self.manifest = {
-            "schema_version": 1, "built_at": "2026-11-06T12:00:00Z", "offline_replay": False,
+            "schema_version": 1,
+            "built_at": "2026-11-06T12:00:00Z",
+            "offline_replay": False,
             "environment": {"github_commit": self.commit},
             "configuration_sha256": {name: sha256(self.root / name) for name in recipe_files},
             "compiler": dict(compiler),
             "sources": [],
-            "scope": {"domains_only": False, "personal_rules_included": False, "router_access": False,
-                      "broad_ai_category_included": False, "ru_direct_category_included": False,
-                      "ip_rules_included": True, "registry_ip_rules_included": True,
-                      "direct_exceptions_included": True, "dns_configuration_included": False},
-            "output": {"total_conditions": 3, "exact": 1, "suffix": 2,
-                       "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
-                       "files": {name: sha256(self.candidate / name) for name in BUILD_FILES - {"manifest.json", "report.html"}}},
+            "scope": {
+                "domains_only": False,
+                "personal_rules_included": False,
+                "router_access": False,
+                "broad_ai_category_included": False,
+                "ru_direct_category_included": False,
+                "ip_rules_included": True,
+                "registry_ip_rules_included": True,
+                "direct_exceptions_included": True,
+                "dns_configuration_included": False,
+            },
+            "output": {
+                "total_conditions": 3,
+                "exact": 1,
+                "suffix": 2,
+                "srs_bytes": (self.candidate / "blocked-domains.srs").stat().st_size,
+                "files": {name: sha256(self.candidate / name) for name in BUILD_FILES - {"manifest.json", "report.html"}},
+            },
             "validation": {"baseline": "previous-successful-or-approved-manifest", "warnings": []},
             "domain_diff": {"added": 0, "removed": 0, "effective_added": 0, "effective_removed": 0},
             "service_networks": {
                 "sources": [{"id": "telegram", "url": "https://core.telegram.org/resources/cidr.txt"}],
                 "validation": {"baseline": "first-service-build", "warnings": []},
-                "output": {"total_prefixes": 2, "ipv4_prefixes": 1, "ipv6_prefixes": 1,
-                           "ipv4_addresses": 16384, "ipv6_addresses": 2 ** 80,
-                           "srs_bytes": (self.candidate / "blocked-services-ip.srs").stat().st_size},
+                "output": {
+                    "total_prefixes": 2,
+                    "ipv4_prefixes": 1,
+                    "ipv6_prefixes": 1,
+                    "ipv4_addresses": 16384,
+                    "ipv6_addresses": 2**80,
+                    "srs_bytes": (self.candidate / "blocked-services-ip.srs").stat().st_size,
+                },
                 "compiler": dict(compiler),
             },
             "registry_ip": {
-                "sources": [{"id": "refilter", "ip_addresses": 1},
-                            {"id": "registry", "url": "https://example.com/cidr.txt", "exact_prefixes": 1}],
+                "sources": [{"id": "refilter", "ip_addresses": 1}, {"id": "registry", "url": "https://example.com/cidr.txt", "exact_prefixes": 1}],
                 "validation": {"baseline": "first-registry-build", "warnings": []},
-                "output": {"total_prefixes": 1, "ipv4_prefixes": 1, "ipv6_prefixes": 0,
-                           "prefixes": ["1.1.1.1/32"],
-                           "srs_bytes": (self.candidate / "blocked-registry-ip.srs").stat().st_size},
+                "output": {
+                    "total_prefixes": 1,
+                    "ipv4_prefixes": 1,
+                    "ipv6_prefixes": 0,
+                    "prefixes": ["1.1.1.1/32"],
+                    "srs_bytes": (self.candidate / "blocked-registry-ip.srs").stat().st_size,
+                },
                 "compiler": dict(compiler),
             },
             "core": {
-                "output": {"total_conditions": 2, "exact": 1, "suffix": 1,
-                           "source_ids": ["fixture"],
-                           "srs_bytes": (self.candidate / "blocked-domains-core.srs").stat().st_size},
+                "output": {
+                    "total_conditions": 2,
+                    "exact": 1,
+                    "suffix": 1,
+                    "source_ids": ["fixture"],
+                    "srs_bytes": (self.candidate / "blocked-domains-core.srs").stat().st_size,
+                },
                 "compiler": dict(compiler),
             },
             "smart": {
-                "output": {"total_conditions": 2, "exact": 1, "suffix": 1,
-                           "popularity_source": "tranco-top-1m", "popular_domains": 1000,
-                           "srs_bytes": (self.candidate / "blocked-domains-smart.srs").stat().st_size},
+                "output": {
+                    "total_conditions": 2,
+                    "exact": 1,
+                    "suffix": 1,
+                    "popularity_source": "tranco-top-1m",
+                    "popular_domains": 1000,
+                    "srs_bytes": (self.candidate / "blocked-domains-smart.srs").stat().st_size,
+                },
                 "compiler": dict(compiler),
             },
             "registry_cidr": {
                 "sources": [{"id": "registry", "url": "https://example.com/cidr.txt"}],
                 "validation": {"baseline": "first-registry-build", "warnings": []},
-                "output": {"total_prefixes": 1, "ipv4_prefixes": 1, "ipv6_prefixes": 0,
-                           "prefixes": ["198.51.100.0/24"],
-                           "srs_bytes": (self.candidate / "blocked-registry-ip-cidr.srs").stat().st_size},
+                "output": {
+                    "total_prefixes": 1,
+                    "ipv4_prefixes": 1,
+                    "ipv6_prefixes": 0,
+                    "prefixes": ["198.51.100.0/24"],
+                    "srs_bytes": (self.candidate / "blocked-registry-ip-cidr.srs").stat().st_size,
+                },
                 "compiler": dict(compiler),
             },
             "direct_exceptions": {
                 "rules": [],
-                "output": {"total_conditions": 0,
-                           "srs_bytes": (self.candidate / "routing-direct-exceptions.srs").stat().st_size},
+                "output": {"total_conditions": 0, "srs_bytes": (self.candidate / "routing-direct-exceptions.srs").stat().st_size},
                 "compiler": dict(compiler),
             },
         }
@@ -193,8 +239,7 @@ class ReleaseTests(unittest.TestCase):
             verify_candidate(self.candidate, self.root, self.commit)
 
     def test_first_service_artifact_keeps_existing_domain_baseline(self):
-        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit,
-                                         allow_initial_baseline=False), self.manifest)
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit, allow_initial_baseline=False), self.manifest)
         self.manifest["service_networks"]["validation"]["baseline"] = "previous-service-build"
         self.write_manifest()
         self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
@@ -202,14 +247,20 @@ class ReleaseTests(unittest.TestCase):
     def test_service_evidence_and_counts_must_be_complete_and_valid(self):
         original = copy.deepcopy(self.manifest)
         failures = [
-            ("output", "total_prefixes", 0), ("output", "ipv4_prefixes", 0),
-            ("output", "ipv6_prefixes", 0), ("output", "ipv4_addresses", 0),
-            ("output", "ipv6_addresses", 0), ("output", "ipv6_addresses", True),
-            ("output", "total_prefixes", 99), ("output", "srs_bytes", 1),
-            ("compiler", "roundtrip", "failed"), ("compiler", "sing_box_check", "failed"),
+            ("output", "total_prefixes", 0),
+            ("output", "ipv4_prefixes", 0),
+            ("output", "ipv6_prefixes", 0),
+            ("output", "ipv4_addresses", 0),
+            ("output", "ipv6_addresses", 0),
+            ("output", "ipv6_addresses", True),
+            ("output", "total_prefixes", 99),
+            ("output", "srs_bytes", 1),
+            ("compiler", "roundtrip", "failed"),
+            ("compiler", "sing_box_check", "failed"),
             ("compiler", "version", "sing-box version 1.0"),
             ("compiler", "network_service_started", True),
-            ("validation", "baseline", "first-build"), ("validation", "warnings", ["review"]),
+            ("validation", "baseline", "first-build"),
+            ("validation", "warnings", ["review"]),
         ]
         for section, key, value in failures:
             with self.subTest(section=section, key=key, value=value):
@@ -237,9 +288,14 @@ class ReleaseTests(unittest.TestCase):
 
     def test_stale_service_fallback_requires_complete_evidence(self):
         validation = self.manifest["service_networks"]["validation"]
-        validation.update({"baseline": "previous-service-data-stale",
-                           "restored_from_built_at": "2026-11-06T10:00:00+00:00",
-                           "stale_hours": 2, "fetch_errors": {"telegram": "timeout"}})
+        validation.update(
+            {
+                "baseline": "previous-service-data-stale",
+                "restored_from_built_at": "2026-11-06T10:00:00+00:00",
+                "stale_hours": 2,
+                "fetch_errors": {"telegram": "timeout"},
+            }
+        )
         self.write_manifest()
         self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)
         validation["fetch_errors"] = {}
@@ -256,8 +312,7 @@ class ReleaseTests(unittest.TestCase):
         self.manifest["validation"] = validate_previous(None, [], 3, {})
         self.write_manifest()
         allowed = initial_baseline_allowed(None, False, "workflow_dispatch")
-        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit,
-                                         allow_initial_baseline=allowed), self.manifest)
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit, allow_initial_baseline=allowed), self.manifest)
 
     def test_existing_release_cannot_silently_lose_its_baseline(self):
         self.manifest["validation"] = validate_previous(None, [], 3, {})
@@ -270,8 +325,7 @@ class ReleaseTests(unittest.TestCase):
         self.manifest["validation"] = validate_previous(None, [], 3, {})
         self.write_manifest()
         allowed = initial_baseline_allowed({"id": 10}, True, "workflow_dispatch")
-        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit,
-                                         allow_initial_baseline=allowed), self.manifest)
+        self.assertEqual(verify_candidate(self.candidate, self.root, self.commit, allow_initial_baseline=allowed), self.manifest)
         self.manifest["validation"]["warnings"].append("Unexpected source problem")
         self.write_manifest()
         with self.assertRaises(PublishError):
@@ -281,9 +335,13 @@ class ReleaseTests(unittest.TestCase):
 
     def test_unsafe_or_unvalidated_build_cannot_be_published(self):
         original = copy.deepcopy(self.manifest)
-        for section, key, value in [("scope", "router_access", True), ("compiler", "roundtrip", "failed"),
-                                    ("output", "srs_bytes", 0), ("validation", "warnings", ["review"]),
-                                    (None, "offline_replay", True)]:
+        for section, key, value in [
+            ("scope", "router_access", True),
+            ("compiler", "roundtrip", "failed"),
+            ("output", "srs_bytes", 0),
+            ("validation", "warnings", ["review"]),
+            (None, "offline_replay", True),
+        ]:
             with self.subTest(key=key):
                 self.manifest = copy.deepcopy(original)
                 target = self.manifest[section] if section else self.manifest
@@ -347,10 +405,15 @@ class ReleaseTests(unittest.TestCase):
         self.publish_to(github)
         metadata_asset = next(a for a in github.existing["assets"] if a["name"] == "release.json")
         previous = copy.deepcopy(self.metadata)
-        previous["fingerprint"] = hashlib.sha256(json_bytes({
-            "schema_version": 1, "srs_sha256": previous["srs_sha256"],
-            "configuration_sha256": self.manifest["configuration_sha256"],
-        })).hexdigest()
+        previous["fingerprint"] = hashlib.sha256(
+            json_bytes(
+                {
+                    "schema_version": 1,
+                    "srs_sha256": previous["srs_sha256"],
+                    "configuration_sha256": self.manifest["configuration_sha256"],
+                }
+            )
+        ).hexdigest()
         del previous["service_srs_sha256"]
         github.stored[metadata_asset["id"]] = json_bytes(previous)
         github.existing["assets"] = [a for a in github.existing["assets"] if not a["name"].startswith("blocked-services-ip")]
@@ -420,6 +483,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNone(redirected.get_header("Authorization"))
         with self.assertRaises(RoutingError):
             handler.redirect_request(request, None, 302, "Found", {}, "http://example.com/file")
+
     def test_failed_upload_rolls_back_the_draft(self):
         old = {"assets": [], "tag_name": "previous"}
         github = FakeGitHub(old)
@@ -453,8 +517,8 @@ class ReleaseTests(unittest.TestCase):
 
     def test_retention_selection_protects_latest_drafts_and_newest(self):
         from publish_release import releases_to_prune
-        releases = [{"id": i, "tag_name": f"rules-{i}", "draft": False,
-                     "published_at": f"2026-11-{i:02d}T00:00:00Z"} for i in range(1, 9)]
+
+        releases = [{"id": i, "tag_name": f"rules-{i}", "draft": False, "published_at": f"2026-11-{i:02d}T00:00:00Z"} for i in range(1, 9)]
         releases.append({"id": 99, "tag_name": "draft", "draft": True, "published_at": "2026-11-09T00:00:00Z"})
         prune = releases_to_prune(releases, latest_id=8, keep=5)
         self.assertEqual([r["id"] for r in prune], [2, 1])
@@ -463,10 +527,10 @@ class ReleaseTests(unittest.TestCase):
 
     def test_only_project_tags_are_deleted(self):
         from publish_release import is_project_tag
+
         self.assertTrue(is_project_tag("v2026.11.13-43422576187-1"))
         self.assertTrue(is_project_tag("rules-43311687566-1"))
-        for foreign in ("v1.0.0", "latest", "release-1", "v2026.11.13", "rules-x-y",
-                        "v2026.11.13-43422576187-1; rm -rf /", "../v2026.11.13-1-1"):
+        for foreign in ("v1.0.0", "latest", "release-1", "v2026.11.13", "rules-x-y", "v2026.11.13-43422576187-1; rm -rf /", "../v2026.11.13-1-1"):
             self.assertFalse(is_project_tag(foreign), foreign)
 
     def test_delete_release_also_deletes_project_tag_but_never_foreign(self):
@@ -512,8 +576,7 @@ class ReleaseTests(unittest.TestCase):
             verify_candidate(self.candidate, self.root, self.commit)
 
     def test_large_change_candidate_publishes_as_prerelease_not_latest(self):
-        self.manifest["validation"] = {"baseline": "large-change-candidate",
-                                       "warnings": ["Large coverage growth staged for review: 1000 -> 5000"]}
+        self.manifest["validation"] = {"baseline": "large-change-candidate", "warnings": ["Large coverage growth staged for review: 1000 -> 5000"]}
         self.write_manifest()
         # verify_candidate accepts the candidate baseline.
         self.assertEqual(verify_candidate(self.candidate, self.root, self.commit), self.manifest)

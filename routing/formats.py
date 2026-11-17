@@ -3,6 +3,7 @@
 These are derived views, not separate data sources: the canonical SRS sets stay
 the source of truth, and each exporter reads the per-set JSON rules.
 """
+
 from __future__ import annotations
 
 from typing import Any

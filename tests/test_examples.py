@@ -52,8 +52,7 @@ class ExampleConfigTests(unittest.TestCase):
     @unittest.skipUnless(COMPILER.is_file(), "pinned sing-box compiler is not installed")
     def test_examples_pass_sing_box_check(self):
         for name in ("singbox-router.json", "singbox-client.json"):
-            result = subprocess.run([str(COMPILER), "check", "--config", str(ROOT / "examples" / name)],
-                                    capture_output=True, text=True)
+            result = subprocess.run([str(COMPILER), "check", "--config", str(ROOT / "examples" / name)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, f"{name}: {result.stdout}{result.stderr}")
 
 

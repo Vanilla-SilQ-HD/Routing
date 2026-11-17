@@ -5,6 +5,7 @@ human-readable ``description`` of each field. This script turns them into a
 Markdown field table between the generated markers, so the documentation cannot
 drift away from the validated format. ``--check`` fails when the block is stale.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -92,7 +93,7 @@ def replace_block(document: str, block: str) -> str:
     stop = document.find(END)
     if start < 0 or stop < 0:
         raise ValueError(f"{DOC_PATH} is missing the generated markers {BEGIN} / {END}")
-    return document[:start] + block + document[stop + len(END):]
+    return document[:start] + block + document[stop + len(END) :]
 
 
 def main() -> None:

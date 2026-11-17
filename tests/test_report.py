@@ -12,35 +12,61 @@ class ReportTests(unittest.TestCase):
         return {
             "built_at": "2026-11-10T00:00:00+00:00",
             "environment": {"github_commit": "a" * 40, "repository": "owner/Routing"},
-            "output": {"total_conditions": 2, "exact": 1, "suffix": 1, "srs_bytes": 100,
-                       "files": {name: "0" * 64 for name in (
-                           "blocked-domains.srs", "blocked-domains-core.srs", "blocked-domains-smart.srs",
-                           "blocked-services-ip.srs",
-                           "blocked-registry-ip.srs", "blocked-registry-ip-cidr.srs",
-                           "routing-direct-exceptions.srs")}},
-            "sources": [{"id": "source", "url": "https://example.com/source", "unique_conditions": 2,
-                         "ip_addresses": 1, "invalid": 0, "filtered_conditions": 0, "sha256": "0" * 64}],
+            "output": {
+                "total_conditions": 2,
+                "exact": 1,
+                "suffix": 1,
+                "srs_bytes": 100,
+                "files": {
+                    name: "0" * 64
+                    for name in (
+                        "blocked-domains.srs",
+                        "blocked-domains-core.srs",
+                        "blocked-domains-smart.srs",
+                        "blocked-services-ip.srs",
+                        "blocked-registry-ip.srs",
+                        "blocked-registry-ip-cidr.srs",
+                        "routing-direct-exceptions.srs",
+                    )
+                },
+            },
+            "sources": [
+                {
+                    "id": "source",
+                    "url": "https://example.com/source",
+                    "unique_conditions": 2,
+                    "ip_addresses": 1,
+                    "invalid": 0,
+                    "filtered_conditions": 0,
+                    "sha256": "0" * 64,
+                }
+            ],
             "service_networks": {
                 "validation": {"baseline": "previous-service-build"},
                 "output": {"total_prefixes": 1, "srs_bytes": 50},
-                "sources": [{"service": "Telegram", "url": "https://example.com/cidr",
-                             "ipv4_prefixes": 1, "ipv6_prefixes": 0}],
+                "sources": [{"service": "Telegram", "url": "https://example.com/cidr", "ipv4_prefixes": 1, "ipv6_prefixes": 0}],
             },
-            "core": {"output": {"total_conditions": 1, "srs_bytes": 40},
-                     "compiler": compiler},
-            "smart": {"output": {"total_conditions": 1, "srs_bytes": 41},
-                      "compiler": compiler},
-            "registry_cidr": {"validation": {"baseline": "previous-registry-build"},
-                              "output": {"total_prefixes": 1, "srs_bytes": 30, "prefixes": ["198.51.100.0/24"]},
-                              "compiler": compiler},
-            "registry_ip": {"validation": {"baseline": "previous-registry-build"},
-                            "output": {"total_prefixes": 1, "srs_bytes": 25, "prefixes": ["1.1.1.1/32"]}},
+            "core": {"output": {"total_conditions": 1, "srs_bytes": 40}, "compiler": compiler},
+            "smart": {"output": {"total_conditions": 1, "srs_bytes": 41}, "compiler": compiler},
+            "registry_cidr": {
+                "validation": {"baseline": "previous-registry-build"},
+                "output": {"total_prefixes": 1, "srs_bytes": 30, "prefixes": ["198.51.100.0/24"]},
+                "compiler": compiler,
+            },
+            "registry_ip": {
+                "validation": {"baseline": "previous-registry-build"},
+                "output": {"total_prefixes": 1, "srs_bytes": 25, "prefixes": ["1.1.1.1/32"]},
+            },
             "direct_exceptions": {"output": {"total_conditions": 0, "srs_bytes": 17}},
             "domain_diff": {"added": 1, "removed": 0, "effective_added": 1, "effective_removed": 0},
-            "domain_changes": {"total_added": 1, "total_removed": 0,
-                               "effective_added": 1, "effective_removed": 0,
-                               "by_kind": {"domain": {"added_sample": ["new.example"], "removed_sample": []}},
-                               "effective_removed_sample": []},
+            "domain_changes": {
+                "total_added": 1,
+                "total_removed": 0,
+                "effective_added": 1,
+                "effective_removed": 0,
+                "by_kind": {"domain": {"added_sample": ["new.example"], "removed_sample": []}},
+                "effective_removed_sample": [],
+            },
             "validation": {"baseline": "previous-successful-or-approved-manifest"},
             "compiler": compiler,
             "scope": {"router_access": False},
@@ -48,10 +74,10 @@ class ReportTests(unittest.TestCase):
 
     def test_dashboard_is_self_contained_and_embeds_safe_data(self):
         manifest = self._manifest()
-        probes = [{"domain": "new.example", "base_decision": "VPN", "final_decision": "VPN",
-                   "expected": "VPN", "matched_rule": "new.example", "sources": ["source"]}]
-        exclusions = [{"domain": "x</script>", "kind": "domain_suffix",
-                       "reason": "public suffix", "sources": ["source"]}]
+        probes = [
+            {"domain": "new.example", "base_decision": "VPN", "final_decision": "VPN", "expected": "VPN", "matched_rule": "new.example", "sources": ["source"]}
+        ]
+        exclusions = [{"domain": "x</script>", "kind": "domain_suffix", "reason": "public suffix", "sources": ["source"]}]
         report = make_report(manifest, exclusions, probes)
         self.assertIn("Routing Dashboard", report)
         self.assertIn("window.ROUTING_DATA=", report)
@@ -68,20 +94,36 @@ class ReportTests(unittest.TestCase):
         self.assertIn("default-src 'none'", report)
         self.assertIn("safeUrl", report)
         # URLs must go through the https-only escaper, never raw interpolation.
-        self.assertIn('safeUrl(x.url)', report)
-        self.assertIn('safeUrl(s.url)', report)
+        self.assertIn("safeUrl(x.url)", report)
+        self.assertIn("safeUrl(s.url)", report)
         self.assertNotIn('href="${s.url}"', report)
         self.assertNotIn('href="${x.url}"', report)
 
     def test_golden_payload_structure(self):
         # Golden test: the embedded ROUTING_DATA payload has a stable, documented shape.
         import json
+
         report = make_report(self._manifest(), [], [])
         payload = report.split("window.ROUTING_DATA=", 1)[1].split(";</script>", 1)[0]
         data = json.loads(payload.replace("<\\/", "</"))
-        self.assertEqual(set(data), {"meta", "summary", "downloads", "sources", "probes",
-                                     "changes", "exclusions", "services", "registry",
-                                     "registryCidr", "directRulesList", "validation", "lookup"})
+        self.assertEqual(
+            set(data),
+            {
+                "meta",
+                "summary",
+                "downloads",
+                "sources",
+                "probes",
+                "changes",
+                "exclusions",
+                "services",
+                "registry",
+                "registryCidr",
+                "directRulesList",
+                "validation",
+                "lookup",
+            },
+        )
         self.assertEqual(data["summary"]["domains"], 2)
         self.assertEqual(data["summary"]["smartDomains"], 1)
         self.assertEqual(len(data["downloads"]), 7)
@@ -96,8 +138,16 @@ class ReportTests(unittest.TestCase):
         manifest = self._manifest()
         manifest["sources"][0]["id"] = "<script>alert(1)</script>"
         manifest["sources"][0]["url"] = "https://example.com/?x=<script>"
-        probes = [{"domain": "<img src=x onerror=alert(1)>", "base_decision": "VPN",
-                   "final_decision": "VPN", "expected": "VPN", "matched_rule": "x", "sources": ["s"]}]
+        probes = [
+            {
+                "domain": "<img src=x onerror=alert(1)>",
+                "base_decision": "VPN",
+                "final_decision": "VPN",
+                "expected": "VPN",
+                "matched_rule": "x",
+                "sources": ["s"],
+            }
+        ]
         report = make_report(manifest, [], probes)
         # The raw closing-script breakout must never appear unescaped in the document.
         self.assertNotIn("<script>alert(1)</script>", report)

@@ -46,6 +46,7 @@ class ExportScriptTests(unittest.TestCase):
         import tempfile
 
         from export_formats import export
+
         with tempfile.TemporaryDirectory() as temporary:
             build = Path(temporary) / "dist"
             out = Path(temporary) / "formats"
@@ -67,6 +68,7 @@ class ExportScriptTests(unittest.TestCase):
         import tempfile
 
         from export_formats import export
+
         with tempfile.TemporaryDirectory() as temporary:
             build = Path(temporary) / "dist"
             out = Path(temporary) / "formats"
@@ -81,6 +83,7 @@ class ExportScriptTests(unittest.TestCase):
         import tempfile
 
         from export_formats import main
+
         with tempfile.TemporaryDirectory() as temporary:
             build = Path(temporary) / "dist"
             out = Path(temporary) / "formats"

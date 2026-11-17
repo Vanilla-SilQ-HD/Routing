@@ -1,4 +1,5 @@
 """Typed source attribution sets used by the routing build."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

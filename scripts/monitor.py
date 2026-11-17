@@ -1,4 +1,5 @@
 """Small external availability probe. Never changes routing rules."""
+
 from __future__ import annotations
 
 import argparse
@@ -36,7 +37,8 @@ def request_json(url: str, *, payload: dict[str, Any] | None = None, timeout: fl
         raise ValueError("Monitoring API URL must use HTTPS")
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {
-        "User-Agent": USER_AGENT, "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
         "Content-Type": "application/json" if data else "application/x-www-form-urlencoded",
     }
     # Optional token raises the Globalping rate limit when provided via secrets.
@@ -59,17 +61,20 @@ def request_json(url: str, *, payload: dict[str, Any] | None = None, timeout: fl
 
 def create_measurement(config: dict[str, Any], target: str) -> Any:
     provider = config["provider"]
-    return request_json(provider["url"], payload={
-        "limit": provider["probes_per_target"],
-        "locations": [{"country": provider["country"]}],
-        "target": target,
-        "type": "http",
-        "measurementOptions": {
-            "request": {"method": "HEAD", "path": "/", "headers": {}},
-            "protocol": "HTTPS",
-            "ipVersion": 4,
+    return request_json(
+        provider["url"],
+        payload={
+            "limit": provider["probes_per_target"],
+            "locations": [{"country": provider["country"]}],
+            "target": target,
+            "type": "http",
+            "measurementOptions": {
+                "request": {"method": "HEAD", "path": "/", "headers": {}},
+                "protocol": "HTTPS",
+                "ipVersion": 4,
+            },
         },
-    })
+    )
 
 
 def wait_for_measurement(config: dict[str, Any], measurement_id: str) -> Any:
@@ -90,8 +95,7 @@ def classify_result(result: dict[str, Any]) -> str:
     headers = result.get("headers", nested.get("headers", {}))
     location = headers.get("location", headers.get("Location", ""))
     raw_output = str(nested.get("rawOutput", result.get("rawOutput", ""))).lower()
-    if "unavailable-in-region" in str(location).lower() or (
-            "location:" in raw_output and "unavailable-in-region" in raw_output):
+    if "unavailable-in-region" in str(location).lower() or ("location:" in raw_output and "unavailable-in-region" in raw_output):
         return "blocked_or_geo"
     if isinstance(status_code, int) and 200 <= status_code < 400:
         return "works_direct"
@@ -139,7 +143,7 @@ def load_compact_domains(url: str) -> list[str]:
         line = line.strip()
         for prefix in ("full:", "domain:"):
             if line.startswith(prefix):
-                domains.append(line[len(prefix):])
+                domains.append(line[len(prefix) :])
                 break
     return domains
 
@@ -170,8 +174,7 @@ def update_stale_candidates(previous: dict[str, Any], results: list[dict[str, An
             streaks[target] = streaks.get(target, 0) + 1
         else:
             streaks.pop(target, None)
-    candidates = [{"domain": target, "consecutive_works_direct": count}
-                  for target, count in sorted(streaks.items()) if count >= threshold]
+    candidates = [{"domain": target, "consecutive_works_direct": count} for target, count in sorted(streaks.items()) if count >= threshold]
     previous["stale_streaks"] = streaks
     return candidates
 
@@ -181,14 +184,16 @@ def summarize_results(target: str, results: list[dict[str, Any]]) -> dict[str, A
     for result in results:
         nested = result.get("result", {})
         probe = result.get("probe", {})
-        observations.append({
-            "status": classify_result(result),
-            "http_status": result.get("statusCode", nested.get("statusCode")),
-            "error": result.get("error", nested.get("error")),
-            "raw_output": str(nested.get("rawOutput", result.get("rawOutput", "")))[:500],
-            "asn": probe.get("asn"),
-            "network": probe.get("network"),
-        })
+        observations.append(
+            {
+                "status": classify_result(result),
+                "http_status": result.get("statusCode", nested.get("statusCode")),
+                "error": result.get("error", nested.get("error")),
+                "raw_output": str(nested.get("rawOutput", result.get("rawOutput", "")))[:500],
+                "asn": probe.get("asn"),
+                "network": probe.get("network"),
+            }
+        )
     statuses = [item["status"] for item in observations]
     errors = [str(item["error"])[:300] for item in observations if item["error"]]
     if len(set(statuses)) > 1:
@@ -212,12 +217,10 @@ def run_probe(config: dict[str, Any], target: str) -> dict[str, Any]:
         measurement = wait_for_measurement(config, created["id"])
         results = measurement.get("results", [])
         if not results:
-            return {"target": target, "status": "unknown", "http_status": None, "error": "empty result",
-                    "probe_statuses": [], "observations": []}
+            return {"target": target, "status": "unknown", "http_status": None, "error": "empty result", "probe_statuses": [], "observations": []}
         return summarize_results(target, results)
     except (OSError, ValueError, KeyError, RuntimeError, TimeoutError, urllib.error.URLError) as exc:
-        return {"target": target, "status": "unknown", "http_status": None, "error": str(exc)[:300],
-                "probe_statuses": [], "observations": []}
+        return {"target": target, "status": "unknown", "http_status": None, "error": str(exc)[:300], "probe_statuses": [], "observations": []}
 
 
 def html_report(data: dict[str, Any]) -> str:
@@ -225,31 +228,37 @@ def html_report(data: dict[str, Any]) -> str:
         return html.escape(str(value), quote=True)
 
     latest = data["history"][-1]["results"] if data["history"] else []
-    rows = "".join(
-        f"<tr><td>{esc(item['target'])}</td><td><span class='status {esc(item['status'])}'>{esc(item['status'])}</span></td>"
-        f"<td>{esc(item.get('http_status') or '—')}</td>"
-        f"<td>{esc(', '.join(item.get('probe_statuses', [])) or '—')}</td>"
-        f"<td>{esc(', '.join(item.get('networks', [])) or '—')}</td>"
-        f"<td>{esc(item.get('error') or '—')}</td></tr>"
-        for item in latest
-    ) or "<tr><td colspan='6'>Измерений пока нет</td></tr>"
+    rows = (
+        "".join(
+            f"<tr><td>{esc(item['target'])}</td><td><span class='status {esc(item['status'])}'>{esc(item['status'])}</span></td>"
+            f"<td>{esc(item.get('http_status') or '—')}</td>"
+            f"<td>{esc(', '.join(item.get('probe_statuses', [])) or '—')}</td>"
+            f"<td>{esc(', '.join(item.get('networks', [])) or '—')}</td>"
+            f"<td>{esc(item.get('error') or '—')}</td></tr>"
+            for item in latest
+        )
+        or "<tr><td colspan='6'>Измерений пока нет</td></tr>"
+    )
     points = "".join(
-        f"<tr><td>{esc(run['generated_at'])}</td>"
-        f"<td>{esc(', '.join(sorted({item['status'] for item in run['results']})))}</td></tr>"
+        f"<tr><td>{esc(run['generated_at'])}</td><td>{esc(', '.join(sorted({item['status'] for item in run['results']})))}</td></tr>"
         for run in reversed(data["history"][-14:])
     )
     stale = data.get("stale_candidates", [])
-    stale_rows = "".join(
-        f"<tr><td>{esc(item['domain'])}</td><td>{esc(item['consecutive_works_direct'])}</td></tr>"
-        for item in stale
-    ) or "<tr><td colspan='2'>Кандидатов на пересмотр нет</td></tr>"
+    stale_rows = (
+        "".join(f"<tr><td>{esc(item['domain'])}</td><td>{esc(item['consecutive_works_direct'])}</td></tr>" for item in stale)
+        or "<tr><td colspan='2'>Кандидатов на пересмотр нет</td></tr>"
+    )
     stale_section = (
-        "<h2>Кандидаты на пересмотр (устаревшие записи)</h2>"
-        "<p>Домены, которые несколько запусков подряд отвечают <b>works_direct</b> из RU. "
-        "Это лишь повод для ручной проверки — маршруты автоматически не меняются.</p>"
-        f"<table><thead><tr><th>Домен</th><th>Запусков works_direct подряд</th></tr></thead><tbody>{stale_rows}</tbody></table>"
-        "<p><a href='stale-candidates.json'>Машинный stale-candidates.json</a></p>"
-    ) if stale else ""
+        (
+            "<h2>Кандидаты на пересмотр (устаревшие записи)</h2>"
+            "<p>Домены, которые несколько запусков подряд отвечают <b>works_direct</b> из RU. "
+            "Это лишь повод для ручной проверки — маршруты автоматически не меняются.</p>"
+            f"<table><thead><tr><th>Домен</th><th>Запусков works_direct подряд</th></tr></thead><tbody>{stale_rows}</tbody></table>"
+            "<p><a href='stale-candidates.json'>Машинный stale-candidates.json</a></p>"
+        )
+        if stale
+        else ""
+    )
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Routing · Мониторинг</title>
 <style>body{{max-width:1200px;margin:32px auto;padding:0 20px;background:#08111f;color:#e7f0fc;font:15px/1.55 system-ui}}h1{{letter-spacing:2px}}p{{color:#93a9c4}}table{{width:100%;border-collapse:collapse;background:#101c2e;margin:20px 0}}td,th{{padding:11px;border:1px solid #293c56;text-align:left;vertical-align:top}}th{{background:#172740}}a{{color:#70b7ff}}.status{{font-weight:700}}.works_direct{{color:#45d7a5}}.blocked_or_geo{{color:#ffca75}}.down_or_error{{color:#ff8b98}}.unknown{{color:#93a9c4}}.notice{{padding:14px;border-left:3px solid #70b7ff;background:#10233a}}</style></head><body>
 <h1>ROUTING · Мониторинг</h1><p>Внешняя проверка небольшой контрольной выборки через Globalping. Результаты не меняют маршруты автоматически и не доказывают наличие блокировки у конкретного провайдера.</p>
@@ -304,10 +313,21 @@ def main() -> None:
     Path(args.output).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     Path(args.html).write_text(html_report(data), encoding="utf-8")
     stale_path = Path(args.output).with_name("stale-candidates.json")
-    stale_path.write_text(json.dumps({"schema_version": 1, "generated_at": data["generated_at"],
-                                      "note": "Домены, которые несколько запусков подряд отвечают works_direct из RU. "
-                                              "Кандидаты на ручной пересмотр; маршруты автоматически не меняются.",
-                                      "candidates": stale_candidates}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    stale_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "generated_at": data["generated_at"],
+                "note": "Домены, которые несколько запусков подряд отвечают works_direct из RU. "
+                "Кандидаты на ручной пересмотр; маршруты автоматически не меняются.",
+                "candidates": stale_candidates,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     logger.info(json.dumps({"measurements": len(history), "latest": history[-1]["results"] if history else []}, ensure_ascii=False))
 
 
