@@ -18,6 +18,7 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routing.datasets import DATASETS
+from routing.domain_shards import write_domain_shards
 
 CORE_FILES = (
     "status.json",
@@ -96,6 +97,9 @@ def prepare_pages(build_dir: Path, output_dir: Path) -> None:
         if src.is_file():
             shutil.copy2(src, output_dir / name)
 
+    # Full rules are too large for the dashboard payload. Publish small, cacheable
+    # shards so a lookup downloads only the relevant prefix.
+    write_domain_shards(build_dir / "blocked-domains.json", output_dir / "domains")
     _publish_monitoring(build_dir, output_dir)
 
 

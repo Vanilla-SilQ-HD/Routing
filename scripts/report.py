@@ -82,6 +82,12 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
                 for source in services["sources"]
             ],
         },
+        "lookup": {
+            "base": "domains/",
+            "index": "domains/index.json",
+            "exact": output["exact"],
+            "suffix": output["suffix"],
+        },
         "registry": registry["output"],
         "registryCidr": manifest["registry_cidr"]["output"],
         "directRulesList": manifest["direct_exceptions"].get("rules", []),
@@ -100,7 +106,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <title>Routing Dashboard</title>
 <style>
 :root{--bg:#08111f;--panel:#101c2e;--panel2:#15243a;--line:#293c56;--text:#e7f0fc;--muted:#93a9c4;--vpn:#45d7a5;--direct:#70b7ff;--danger:#ff8b98;--shadow:0 12px 36px #02071055}
@@ -119,6 +125,7 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
   <button data-tab="probes">VPN / Direct</button>
   <button data-tab="sources">Источники</button>
   <button data-tab="changes">Изменения</button>
+  <button data-tab="lookup">Поиск домена</button>
   <button data-tab="networks">IP и сети</button>
   <button data-tab="validation">Проверки</button>
 </nav>
@@ -143,6 +150,11 @@ def make_report(manifest: dict[str, Any], exclusions: list[dict[str, Any]], prob
   <div id="change-cards" class="grid cards"></div>
   <div class="columns"><div><h3>Добавленные условия</h3><div class="toolbar"><input id="added-search" type="search" placeholder="Фильтр добавленных…"></div><div class="table-wrap"><table><tbody id="added-rows"></tbody></table></div></div><div><h3>Удалённые условия</h3><div class="toolbar"><input id="removed-search" type="search" placeholder="Фильтр удалённых…"></div><div class="table-wrap"><table><tbody id="removed-rows"></tbody></table></div></div></div>
   <h3 style="margin-top:22px">Фактически потерянное покрытие</h3><div class="table-wrap"><table><tbody id="lost-rows"></tbody></table></div>
+</section>
+<section id="lookup" class="panel">
+  <h2>Почему домен идёт через VPN или напрямую</h2><p class="description">Поиск по последнему манифесту: решение, сработавшее правило и источники. Точные совпадения проверяются по полному списку, suffix-правила — по первому символу домена.</p>
+  <div class="toolbar"><input id="lookup-input" type="search" placeholder="Например, youtube.com или rutracker.org" autocapitalize="off" autocomplete="off" spellcheck="false"><button type="button" id="lookup-run">Проверить</button></div>
+  <div id="lookup-result" class="notice">Введите домен. Все участники домена проверяются сверху вниз, как в sing-box.</div>
 </section>
 <section id="networks" class="panel">
   <h2>Сервисные сети</h2><p id="service-baseline" class="description"></p><div class="table-wrap"><table><thead><tr><th>Сервис</th><th>IPv4</th><th>IPv6</th><th>Источник</th></tr></thead><tbody id="service-rows"></tbody></table></div>
@@ -205,6 +217,58 @@ function paginatedNetwork(key,items,emptyText){
 }
 paginatedNetwork('registry',D.registry.prefixes,'Нет адресов');
 paginatedNetwork('registry-cidr',D.registryCidr.prefixes,'Нет сетей');
+const lookupState={index:null,shards:{}};
+const shardKey=d=>{const c=(d[0]||'').toLowerCase();return /[a-z0-9]/.test(c)?c:'_'};
+async function loadIndex(){
+  if(lookupState.index)return lookupState.index;
+  try{
+    const res=await fetch(D.lookup.index,{cache:'no-cache'});
+    lookupState.index=res.ok?{shards:(await res.json()).shards||{}}:{shards:null};
+  }catch{lookupState.index={shards:null}}
+  return lookupState.index;
+}
+async function loadShard(key){
+  if(lookupState.shards[key])return lookupState.shards[key];
+  const set={domain:new Set(),domain_suffix:new Set()};
+  const res=await fetch(D.lookup.base+encodeURIComponent(key)+'.json',{cache:'no-cache'});
+  if(!res.ok)throw new Error('нет шарда '+key);
+  const data=await res.json();
+  for(const rule of data.rules||[]){for(const kind of ['domain','domain_suffix']){for(const v of rule[kind]||[])set[kind].add(String(v).toLowerCase())}}
+  lookupState.shards[key]=set;return set;
+}
+async function loadShards(keys){
+  const index=await loadIndex();
+  const wanted=[...new Set(keys)].filter(key=>!index.shards||Object.prototype.hasOwnProperty.call(index.shards,key));
+  return Promise.all(wanted.map(loadShard));
+}
+function explainDomain(input){
+  const out=$('lookup-result'),domain=String(input||'').trim().toLowerCase().replace(/^\.+|\.+$/g,'');
+  if(!/^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/.test(domain)){out.innerHTML='<span class="danger">Некорректный домен.</span> Введите имя вида <code>example.com</code>.';return}
+  out.textContent='Ищу совпадения…';
+  const labels=domain.split('.'),candidates=[];
+  for(let i=0;i<labels.length;i++)candidates.push(labels.slice(i).join('.'));
+  loadShards(candidates.map(shardKey)).then(sets=>{
+    const merged={domain:new Set(),domain_suffix:new Set()};
+    for(const set of sets){for(const kind of ['domain','domain_suffix']){for(const v of set[kind])merged[kind].add(v)}}
+    let matched='',kind='';
+    for(const candidate of candidates){
+      if(merged.domain.has(candidate)){matched=candidate;kind='domain';break}
+      if(merged.domain_suffix.has(candidate)){matched=candidate;kind='domain_suffix';break}
+    }
+    const badgeHtml=matched?'<span class="badge vpn">VPN</span>':'<span class="badge direct">Direct</span>';
+    let html=`<div style="margin-bottom:10px">${badgeHtml} <b>${esc(domain)}</b></div>`;
+    if(matched){
+      html+=`<div>Сработало правило: <code>${esc(kind)}</code> → <code>${esc(matched)}</code></div>`;
+      html+=`<div class="small" style="margin-top:6px">Проверено сверху вниз: ${candidates.map(c=>esc(c)).join(' → ')}</div>`;
+    }else{
+      html+='<div>Совпадений в доменном наборе нет: трафик пойдёт напрямую.</div>';
+      html+='<div class="small" style="margin-top:6px">Если ресурс заблокирован, предложите его через issue — домен попадёт в <code>manual-vpn.json</code>.</div>';
+    }
+    out.innerHTML=html;
+  }).catch(err=>{out.innerHTML=`<span class="danger">Не удалось загрузить шард.</span> <span class="small">${esc(err.message)}. Поиск работает на опубликованной странице GitHub Pages.</span>`});
+}
+$('lookup-run').addEventListener('click',()=>explainDomain($('lookup-input').value));
+$('lookup-input').addEventListener('keydown',event=>{if(event.key==='Enter')explainDomain(event.target.value)});
 $('direct-rules').innerHTML='Условий: '+fmt(S.directRules)+'. Пустой набор безопасен и не имеет совпадений.'+(D.directRulesList.length?'<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Правило</th><th>Причина</th><th>Пересмотр</th></tr></thead><tbody>'+D.directRulesList.map(x=>`<tr><td class="domain">${esc(x.domain)}</td><td>${esc(x.reason)}</td><td>${esc(x.review_after)}</td></tr>`).join('')+'</tbody></table></div>':'');
 $('baselines').innerHTML=`<table><tbody><tr><td>Доменный baseline</td><td><code>${esc(D.validation.domainBaseline)}</code></td></tr><tr><td>Сервисный baseline</td><td><code>${esc(D.validation.serviceBaseline)}</code></td></tr><tr><td>Registry baseline</td><td><code>${esc(D.validation.registryBaseline)}</code></td></tr><tr><td>Компилятор</td><td><code>${esc(D.validation.compiler.version)}</code></td></tr><tr><td>sing-box check</td><td><span class="badge vpn">${esc(D.validation.compiler.sing_box_check)}</span></td></tr></tbody></table>`;
 $('scope').innerHTML=Object.entries(D.validation.scope).map(([k,v])=>`<div class="download"><code>${esc(k)}</code>: <b>${esc(v)}</b></div>`).join('');

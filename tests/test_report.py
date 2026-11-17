@@ -81,7 +81,7 @@ class ReportTests(unittest.TestCase):
         data = json.loads(payload.replace("<\\/", "</"))
         self.assertEqual(set(data), {"meta", "summary", "downloads", "sources", "probes",
                                      "changes", "exclusions", "services", "registry",
-                                     "registryCidr", "directRulesList", "validation"})
+                                     "registryCidr", "directRulesList", "validation", "lookup"})
         self.assertEqual(data["summary"]["domains"], 2)
         self.assertEqual(data["summary"]["smartDomains"], 1)
         self.assertEqual(len(data["downloads"]), 7)
