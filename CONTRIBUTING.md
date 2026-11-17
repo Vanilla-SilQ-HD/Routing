@@ -27,100 +27,43 @@
 5. Запустите локальную сборку и убедитесь, что покрытие не регрессирует (`domain-changes.json`).
 6. Откройте pull request с описанием источника и примерами записей.
 
-## Требования к коду
+## Требования и быстрый старт
 
-- Python **3.11+** (CI проверяет матрицу 3.11–3.14).
-- Линтер: `ruff check` (форматирование не навязано).
-- Типизация: `mypy` в strict-режиме (конфигурация в `pyproject.toml`).
-- Тесты: `python -m unittest discover -s tests`.
-- Все конфиги валидируются по JSON Schema, артефакты сборки — по output-схемам.
-
-## Быстрый старт
+- Python **3.11+** (CI проверяет версии 3.11–3.14).
+- Для запуска проверок нужны зависимости из `requirements.txt` и `requirements-dev.txt`.
+- Установка из корня репозитория:
 
 ```bash
-# Клонирование и установка зависимостей
 git clone https://github.com/Vanilla-SilQ-HD/Routing.git
 cd Routing
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
+make install
 ```
 
-## Запуск проверок локально
+Зависимости зафиксированы с хешами; в CI они устанавливаются с `pip --require-hashes`.
 
-Все команды можно запустить через Makefile (см. ниже) или вручную:
+## Проверки и локальная сборка
+
+Makefile — основной интерфейс локальных команд и источник их точного определения. `just` (если установлен) делегирует в Makefile.
 
 ```bash
-# Линт, типизация, безопасность
-python -m ruff check scripts tests routing
-python -m mypy
-python -m bandit -q -r scripts --severity-level medium
-
-# Валидация конфигов и схем
-python scripts/validate_config.py
-
-# Компилятор для интеграционных тестов
-python scripts/install_tools.py
-
-# Тесты с покрытием
-python -m coverage run -m unittest discover -s tests
-python -m coverage report --fail-under=75
-
-# Офлайн-сборка и валидация артефактов
-python scripts/build.py --offline --output dist
-python scripts/validate_outputs.py dist
+make lint       # Ruff для scripts, tests и routing
+make typecheck  # mypy (strict)
+make security   # Bandit
+make test       # unittest
+make coverage   # unittest с порогом покрытия 75%
+make validate   # проверка конфигов и dist/
+make docs       # генерация docs/DATA_FORMATS.md
+make build      # офлайн-сборка в dist/
 ```
 
-## Makefile
-
-Для удобства локальной разработки используйте Makefile:
-
-```make
-.PHONY: install lint typecheck security test coverage build validate clean
-
-install:
-	python -m pip install -r requirements.txt
-	python -m pip install -r requirements-dev.txt
-
-lint:
-	python -m ruff check scripts tests routing
-
-typecheck:
-	python -m mypy
-
-security:
-	python -m bandit -q -r scripts --severity-level medium
-
-test:
-	python -m unittest discover -s tests
-
-coverage:
-	python -m coverage run -m unittest discover -s tests
-	python -m coverage report --fail-under=75
-
-build:
-	python scripts/build.py --offline --output dist
-
-validate:
-	python scripts/validate_config.py
-	python scripts/validate_outputs.py dist
-
-clean:
-	python -m coverage erase
-	rm -rf dist/* incoming/* previous/*
-```
-
-Примеры использования:
+CI дополнительно проверяет примеры sing-box через установленный закреплённый компилятор. Для локального запуска этого шага выполните `python scripts/install_tools.py`, затем:
 
 ```bash
-make install      # Установка зависимостей
-make lint         # Проверка стиля
-make typecheck    # Проверка типов
-make test         # Запуск тестов
-make coverage     # Тесты с отчётом о покрытии
-make build        # Офлайн-сборка
-make validate     # Валидация конфигов и артефактов
-make clean        # Очистка артефактов
+.tools/sing-box check --config examples/singbox-router.json
+.tools/sing-box check --config examples/singbox-client.json
 ```
+
+Для проверки, что сгенерированная справка форматов актуальна, используйте `python scripts/gen_docs.py --check`. Список точных проверок CI см. в [workflow сборки](.github/workflows/build.yml).
 
 ## Процесс ревью
 
