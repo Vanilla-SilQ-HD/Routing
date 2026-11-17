@@ -1,8 +1,8 @@
 name: Promote a reviewed candidate release
 
 # After reviewing a candidate pre-release (large coverage growth), a maintainer
-# runs this workflow with the candidate tag. The candidate is promoted to a
-# stable Latest release without rebuilding or re-uploading any assets.
+# runs this workflow with the candidate tag. The same release is promoted to
+# stable Latest without changing its immutable tag or re-uploading any assets.
 
 on:
   workflow_dispatch:
@@ -57,12 +57,9 @@ jobs:
           release = call("GET", base + f"/releases/tags/{tag}")
           if not release.get("prerelease"):
               sys.exit(f"Release {tag} is not a pre-release candidate; nothing to promote.")
-          new_tag = re.sub(r"^candidate-", "v", tag)
           updated = call("PATCH", base + f"/releases/{release['id']}", {
-              "tag_name": new_tag,
-              "name": release["name"].replace("Routing candidate ·", "Routing ·"),
               "prerelease": False,
               "make_latest": "true",
           })
-          print(f"Promoted {tag} -> {updated['tag_name']} as Latest: {updated['html_url']}")
+          print(f"Promoted {updated['tag_name']} as Latest: {updated['html_url']}")
           PY
