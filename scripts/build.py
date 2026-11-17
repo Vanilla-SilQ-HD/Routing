@@ -175,21 +175,24 @@ def fetch_source(source: dict[str, Any], cache: str | Path, offline: bool = Fals
             logger.info("Fetched %s: %s bytes", source["id"], f"{size:,}")
             return target, metadata
         except urllib.error.HTTPError as exc:
-            temporary.unlink(missing_ok=True)
-            if exc.code == 304 and cached is not None:
-                # Not modified: reuse the verified cache without touching the network again.
-                cached = dict(cached, not_modified=True)
-                write_json(metadata_path, cached)
-                logger.info("Source %s not modified (304); using cache", source["id"])
-                return target, cached
-            error = exc
-            if attempt < retries - 1:
-                retry_after = exc.headers.get("Retry-After") if exc.code in {429, 503} else None
-                try:
-                    delay = float(retry_after) if retry_after else _retry_delay(attempt, net)
-                except ValueError:
-                    delay = _retry_delay(attempt, net)
-                time.sleep(delay)
+            try:
+                temporary.unlink(missing_ok=True)
+                if exc.code == 304 and cached is not None:
+                    # Not modified: reuse the verified cache without touching the network again.
+                    cached = dict(cached, not_modified=True)
+                    write_json(metadata_path, cached)
+                    logger.info("Source %s not modified (304); using cache", source["id"])
+                    return target, cached
+                error = exc
+                if attempt < retries - 1:
+                    retry_after = exc.headers.get("Retry-After") if exc.code in {429, 503} else None
+                    try:
+                        delay = float(retry_after) if retry_after else _retry_delay(attempt, net)
+                    except ValueError:
+                        delay = _retry_delay(attempt, net)
+                    time.sleep(delay)
+            finally:
+                exc.close()
         except (OSError, urllib.error.URLError, BuildError) as exc:
             error = exc
             temporary.unlink(missing_ok=True)
@@ -903,7 +906,9 @@ def build(args: Any) -> None:
         }
         write_json(stage / "manifest.json", manifest)
         (stage / "report.html").write_text(make_report(manifest, excluded, probes), encoding="utf-8")
-        (stage / "SHA256SUMS").write_text("".join(f"{file_sha256(path)}  {path.name}\n" for path in sorted(stage.iterdir()) if path.is_file()), encoding="utf-8")
+        (stage / "SHA256SUMS").write_bytes("".join(
+            f"{file_sha256(path)}  {path.name}\n" for path in sorted(stage.iterdir()) if path.is_file()
+        ).encode("ascii"))
         if target.exists():
             target.rmdir()
         stage.rename(target)

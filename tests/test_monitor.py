@@ -107,6 +107,23 @@ class MonitorTests(unittest.TestCase):
             self.assertEqual(data["vpn_measurement"], "not_performed")
             self.assertTrue((root / "out.html").is_file())
 
+    def test_load_previous_handles_http_errors_from_request(self):
+        import io
+        import urllib.error
+
+        from monitor import load_previous
+
+        not_found = urllib.error.HTTPError("https://example/monitoring.json", 404, "Not Found", {}, None)
+        server_error = urllib.error.HTTPError("https://example/monitoring.json", 500, "Server Error", {},
+                                              io.BytesIO(b"upstream unavailable"))
+        for error, restored in ((not_found, True), (server_error, False)):
+            with self.subTest(code=error.code), \
+                    patch("urllib.request.build_opener") as opener:
+                opener.return_value.open.side_effect = error
+                result = load_previous("https://example/monitoring.json")
+            self.assertEqual(result["history"], [])
+            self.assertEqual(result["history_restored"], restored)
+            error.close()
 
     def test_load_previous_distinguishes_404_from_real_failures(self):
         import urllib.error

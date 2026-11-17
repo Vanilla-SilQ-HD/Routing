@@ -48,7 +48,12 @@ def request_json(url: str, *, payload: dict[str, Any] | None = None, timeout: fl
         with urllib.request.build_opener().open(request, timeout=timeout) as response:
             return json.loads(response.read(4 * 1024 * 1024 + 1))
     except urllib.error.HTTPError as exc:
-        detail = exc.read(2000).decode("utf-8", errors="replace")
+        if exc.code == 404:
+            raise
+        try:
+            detail = exc.read(2000).decode("utf-8", errors="replace")
+        finally:
+            exc.close()
         raise RuntimeError(f"Globalping HTTP {exc.code}: {detail}") from exc
 
 
@@ -107,6 +112,7 @@ def load_previous(url: str) -> dict[str, Any]:
     try:
         return cast(dict[str, Any], request_json(url))
     except urllib.error.HTTPError as exc:
+        exc.close()
         if exc.code == 404:
             return {"history": [], "history_restored": True}
         logger.warning("Could not load previous monitoring history (HTTP %s); keeping it unrestored", exc.code)

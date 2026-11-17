@@ -62,6 +62,7 @@ def restore_latest_rules(base: str, token: str) -> None:
         latest = get(base + "/releases/latest", token)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
+            exc.close()
             return
         raise
     assets = {asset["name"]: asset for asset in latest.get("assets", [])}
