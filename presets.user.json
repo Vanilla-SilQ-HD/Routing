@@ -1,0 +1,100 @@
+{
+  "presets": [
+    {
+      "id": "routing-full",
+      "name": "Routing · Full",
+      "iconSlug": "router",
+      "category": "custom",
+      "notice": "Полная доменная база и точные IP. Direct-исключения настройте отдельным приоритетным правилом.",
+      "engines": {
+        "singbox": {
+          "ruleSets": [
+            {
+              "tag": "routing",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains.srs"
+            },
+            {
+              "tag": "routing-services",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs"
+            },
+            {
+              "tag": "routing-registry-ip",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs"
+            }
+          ],
+          "action": "tunnel"
+        }
+      }
+    },
+    {
+      "id": "routing-compact",
+      "name": "Routing · Compact",
+      "iconSlug": "router",
+      "category": "custom",
+      "notice": "Компактная доменная база без двух крупнейших реестров, сервисные сети и точные IP. Direct-исключения настраиваются отдельно.",
+      "engines": {
+        "singbox": {
+          "ruleSets": [
+            {
+              "tag": "routing-core",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-core.srs"
+            },
+            {
+              "tag": "routing-services",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs"
+            },
+            {
+              "tag": "routing-registry-ip",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs"
+            }
+          ],
+          "action": "tunnel"
+        }
+      }
+    },
+    {
+      "id": "routing-smart",
+      "name": "Routing · Smart",
+      "iconSlug": "router",
+      "category": "custom",
+      "notice": "Compact плюс популярные домены из полного набора (Tranco top-1M): баланс покрытия и размера. Direct-исключения настраиваются отдельно.",
+      "engines": {
+        "singbox": {
+          "ruleSets": [
+            {
+              "tag": "routing-smart",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-domains-smart.srs"
+            },
+            {
+              "tag": "routing-services",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-services-ip.srs"
+            },
+            {
+              "tag": "routing-registry-ip",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip.srs"
+            }
+          ],
+          "action": "tunnel"
+        }
+      }
+    },
+    {
+      "id": "routing-wide-cidr",
+      "name": "Routing · Wide CIDR",
+      "iconSlug": "router",
+      "category": "custom",
+      "notice": "Дополнительные широкие CIDR. Подключайте только после проверки покрытия.",
+      "engines": {
+        "singbox": {
+          "ruleSets": [
+            {
+              "tag": "routing-registry-ip-cidr",
+              "url": "https://github.com/Vanilla-SilQ-HD/Routing/releases/latest/download/blocked-registry-ip-cidr.srs"
+            }
+          ],
+          "action": "tunnel"
+        }
+      }
+    }
+  ]
+}

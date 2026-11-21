@@ -1,0 +1,26 @@
+{
+  "baseline": "previous-successful-or-approved-manifest",
+  "observed_at": "2026-11-21T11:16:13+00:00",
+  "sample_limit": 1000,
+  "by_kind": {
+    "domain": {
+      "added": 0,
+      "removed": 0,
+      "added_sample": [],
+      "removed_sample": []
+    },
+    "domain_suffix": {
+      "added": 0,
+      "removed": 0,
+      "added_sample": [],
+      "removed_sample": []
+    }
+  },
+  "added_by_sources": [],
+  "total_added": 0,
+  "total_removed": 0,
+  "effective_added": 0,
+  "effective_removed": 0,
+  "effective_added_sample": [],
+  "effective_removed_sample": []
+}
