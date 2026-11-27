@@ -415,14 +415,6 @@ def _removed_domains(
     except (OSError, ValueError):
         return set()
     previous_domains = set(previous_data.get("exact", [])) | set(previous_data.get("suffix", []))
-    if previous is None:
-        return previous_domains
-    # Filter to only domains that the previous manifest's unique_conditions implies
-    # were actually present: avoid false positives from cache pollution.
-    current_set = set()
-    # We don't have the current parsed domains here directly, but the caller passes
-    # exact/suffix via validate_previous; this function is only a fallback placeholder.
-    # The real check happens in validate_previous via match_rule against exact/suffix.
     return previous_domains
 
 
