@@ -11,6 +11,10 @@ on:
         description: 'Stage a large coverage growth as a candidate pre-release for review'
         type: boolean
         default: false
+      allow_source_drop:
+        description: 'Allow a source to shrink if removed domains are covered elsewhere'
+        type: boolean
+        default: false
   schedule:
     - cron: '35 0,6,12,18 * * *'
     - cron: '17 3 * * *'
@@ -142,9 +146,13 @@ jobs:
           if [ "${ALLOW_LARGE_CHANGE}" = "true" ]; then
             args+=(--allow-large-change)
           fi
+          if [ "${ALLOW_SOURCE_DROP}" = "true" ]; then
+            args+=(--allow-source-drop)
+          fi
           python scripts/build.py --output dist "${args[@]}"
         env:
           ALLOW_LARGE_CHANGE: ${{ inputs.allow_large_change || false }}
+          ALLOW_SOURCE_DROP: ${{ inputs.allow_source_drop || false }}
       - name: Validate artifacts against output schemas
         run: python scripts/validate_outputs.py dist
       - name: Measure sing-box memory per profile (advisory)

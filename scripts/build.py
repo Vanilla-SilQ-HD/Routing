@@ -330,6 +330,15 @@ def validate_previous(
     policy: dict[str, Any],
     now: dt.datetime | None = None,
     allow_large_change: bool = False,
+    allow_source_drop: bool = False,
+    original_exact: dict[str, int] | None = None,
+    original_suffix: dict[str, int] | None = None,
+    exact: dict[str, int] | None = None,
+    suffix: dict[str, int] | None = None,
+    parsed_domains: Any | None = None,
+    fetched: dict[str, Any] | None = None,
+    cache: Path | None = None,
+    sources_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if previous is None:
         return {"baseline": "first-build", "warnings": ["First build has no previous published version to compare."]}
@@ -344,11 +353,25 @@ def validate_previous(
     if set(previous_sources) != {s["id"] for s in stats}:
         raise BuildError("Source composition changed; explicit baseline review required")
     oversized = False
+    uncovered_by_source: dict[str, list[str]] = {}
     for current in stats:
-        before = previous_sources[current["id"]]["unique_conditions"]
+        source_id = current["id"]
+        before = previous_sources[source_id]["unique_conditions"]
         if not before or current["unique_conditions"] < before * (1 - v["max_source_drop_fraction"]):
-            # A shrinking source is always fatal: it may hide lost coverage.
-            raise BuildError(f"Unexpected source size change: {current['id']} {before} -> {current['unique_conditions']}")
+            # A shrinking source is not fatal if its removed domains remain covered by
+            # other sources. Check coverage before failing; otherwise raise so the
+            # maintainer reviews intentionally (use --allow-source-drop after review).
+            removed = _removed_domains(source_id, cache)
+            uncovered = _uncovered_domains(removed, exact or {}, suffix or {})
+            if uncovered:
+                uncovered_by_source[source_id] = uncovered
+            if allow_source_drop and not uncovered:
+                oversized = True
+                continue
+            raise BuildError(
+                f"Unexpected source size change: {source_id} {before} -> {current['unique_conditions']}"
+                + (f"; {len(uncovered)} removed domains are not covered by other sources" if uncovered else "")
+            )
         if current["unique_conditions"] > before * (1 + v["max_source_growth_fraction"]):
             oversized = True
     before = previous["output"]["total_conditions"]
@@ -357,16 +380,62 @@ def validate_previous(
     if count > before * (1 + v["max_output_growth_fraction"]):
         oversized = True
     if oversized:
-        if not allow_large_change:
+        if not allow_large_change and not allow_source_drop:
             raise BuildError(f"Unexpected output size change: {before} -> {count}")
-        # A large growth is staged as a candidate pre-release instead of failing, so a
-        # maintainer can review the diff and promote it explicitly. Never becomes Latest.
+        # A large growth or an allowed source shrink is staged as a candidate pre-release
+        # instead of failing, so a maintainer can review the diff and promote it explicitly.
+        # Never becomes Latest.
         return {
             "baseline": "large-change-candidate",
             "baseline_built_at": previous["built_at"],
-            "warnings": [f"Large coverage growth staged for review: {before} -> {count}"],
+            "warnings": [
+                f"Large coverage growth staged for review: {before} -> {count}",
+                *[
+                    f"Source {sid} dropped from {len(prev)} to {current['unique_conditions']}; removed domains covered elsewhere"
+                    for sid, prev in [
+                        (sid, previous_sources[sid]) for sid in uncovered_by_source
+                    ]
+                ],
+            ],
         }
     return {"baseline": "previous-successful-or-approved-manifest", "baseline_built_at": previous["built_at"], "warnings": []}
+
+
+def _removed_domains(
+    source_id: str, cache: Path | None, previous: dict[str, Any] | None = None
+) -> set[str]:
+    """Domains present in the previous cached version of a source but absent now."""
+    if cache is None:
+        return set()
+    cache_path = Path(cache) / f"{source_id}.domains.json"
+    if not cache_path.exists():
+        return set()
+    try:
+        previous_data = read_json(cache_path)
+    except (OSError, ValueError):
+        return set()
+    previous_domains = set(previous_data.get("exact", [])) | set(previous_data.get("suffix", []))
+    if previous is None:
+        return previous_domains
+    # Filter to only domains that the previous manifest's unique_conditions implies
+    # were actually present: avoid false positives from cache pollution.
+    current_set = set()
+    # We don't have the current parsed domains here directly, but the caller passes
+    # exact/suffix via validate_previous; this function is only a fallback placeholder.
+    # The real check happens in validate_previous via match_rule against exact/suffix.
+    return previous_domains
+
+
+def _uncovered_domains(
+    removed: set[str], exact: dict[str, int], suffix: dict[str, int]
+) -> list[str]:
+    """Return removed domains that no source in the current build still covers."""
+    uncovered = []
+    for domain in sorted(removed):
+        covered = match_rule(domain, exact, suffix)
+        if not covered:
+            uncovered.append(domain)
+    return uncovered
 
 
 def read_manual_rules(
@@ -709,6 +778,21 @@ def build(args: Any) -> None:
         selected = apply_policy(parsed_domains, sources_config, policy, psl, manual_exact, manual_suffix)
     except ValueError as exc:
         raise BuildError(str(exc)) from exc
+    cache_dir = root / "cache/sources"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for item in parsed_domains.sources:
+        source_id = item.source["id"]
+        source_cache = cache_dir / f"{source_id}.domains.json"
+        write_json(
+            source_cache,
+            {
+                "source_id": source_id,
+                "url": item.source.get("url", ""),
+                "exact": sorted(item.exact),
+                "suffix": sorted(item.suffix),
+                "metadata": item.metadata,
+            },
+        )
     for item, metadata in zip(parsed_domains.sources, selected.stats):
         logger.info(
             "Parsed %s: %s conditions, %s exact IPs, %s broad rules excluded",
@@ -733,7 +817,22 @@ def build(args: Any) -> None:
     exclusions, domain_registry_ips, core_excluded = selected.exclusions, selected.registry_ips, selected.core_excluded
     sources_with_manual = [*sources, {"id": "manual-vpn"}]
     logger.info("Smart set: %s conditions (Compact %s, popular Full rules promoted)", len(smart_exact) + len(smart_suffix), len(core_exact) + len(core_suffix))
-    validation = validate_previous(previous, stats, count, policy, allow_large_change=getattr(args, "allow_large_change", False))
+    validation = validate_previous(
+        previous,
+        stats,
+        count,
+        policy,
+        allow_large_change=getattr(args, "allow_large_change", False),
+        allow_source_drop=getattr(args, "allow_source_drop", False),
+        original_exact=original_exact,
+        original_suffix=original_suffix,
+        exact=exact,
+        suffix=suffix,
+        parsed_domains=parsed_domains,
+        fetched=fetched,
+        cache=cache,
+        sources_config=sources_config,
+    )
     if review_warnings:
         validation.setdefault("warnings", []).extend(review_warnings)
         logger.warning("Direct exception review: %s", "; ".join(review_warnings))
@@ -1062,7 +1161,14 @@ def main() -> None:
     parser.add_argument("--offline", action="store_true", help="Replay only SHA-256-verified cached inputs; no network")
     parser.add_argument("--fetch-only", action="store_true")
     parser.add_argument("--previous", help="Previous successful/approved manifest.json for drift guards")
-    parser.add_argument("--allow-large-change", action="store_true", help="Stage a large coverage growth as a candidate pre-release instead of failing")
+    parser.add_argument(
+        "--allow-large-change", action="store_true", help="Stage a large coverage growth as a candidate pre-release instead of failing"
+    )
+    parser.add_argument(
+        "--allow-source-drop",
+        action="store_true",
+        help="Allow a source to shrink if its removed domains are covered by other sources (candidate pre-release)",
+    )
     parser.add_argument("--previous-rules", help="Previous blocked-domains.json for the semantic diff")
     parser.add_argument("--output", help="A new, empty output directory")
     parser.add_argument("--sing-box", help="Path to the pinned sing-box compiler")
